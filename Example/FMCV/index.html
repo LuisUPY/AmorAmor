@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#0f2b5c">
+  <meta name="description" content="Punto de venta local para Freeze Monkey">
+  <title>Freeze Monkey · Punto de venta</title>
+  <script src="https://cdn.tailwindcss.com" async></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="./css/styles.css?v=20261005-1">
+  <script src="./js/menuData.js?v=20261005-2" defer></script>
+  <script src="./js/storage.js?v=20260930-2" defer></script>
+  <script src="./js/posEngine.js?v=20261005-2" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div><strong>FREEZE<br>MONKEY</strong><time id="today"></time></div>
+    </div>
+    <div class="header-center"><span class="live-dot"></span> Punto de venta <span class="header-separator">/</span> <span id="header-date"></span></div>
+    <nav class="top-actions" aria-label="Navegación principal">
+      <button id="history-button" type="button">Historial</button>
+      <button id="options-button" type="button">Opciones</button>
+    </nav>
+  </header>
+
+  <main class="workspace">
+    <section class="catalog" aria-labelledby="catalog-title">
+      <div class="catalog-heading">
+        <div><p class="eyebrow">MENÚ PRINCIPAL</p><h1 id="catalog-title">¿Qué preparamos hoy?</h1></div>
+        <div class="search-wrap"><label for="search" class="sr-only">Buscar producto</label><span aria-hidden="true">⌕</span><input id="search" type="search" placeholder="Buscar producto…" autocomplete="off"></div>
+      </div>
+      <div id="filters" class="filters" role="group" aria-label="Filtrar productos">
+        <button type="button" class="active" data-filter="todos">Todos</button>
+        <button type="button" data-filter="combos">Combos</button>
+        <button type="button" data-filter="frappes">Frappés</button>
+        <button type="button" data-filter="smoothies">Smoothies</button>
+        <button type="button" data-filter="limonadas">Limonadas</button>
+        <button type="button" data-filter="snacks">Snacks</button>
+      </div>
+      <div class="catalog-meta"><span id="result-count"></span><span>Toque un producto para agregarlo</span></div>
+      <div id="products" class="product-grid"></div>
+      <p id="no-products" class="empty-state" hidden>No se encontraron productos.</p>
+    </section>
+
+    <aside class="side-panel" aria-label="Pedido actual y ventas del día">
+      <section class="draft-section" aria-labelledby="draft-title">
+        <div class="section-title"><div><p class="eyebrow">EN PREPARACIÓN</p><h2 id="draft-title">Pedido actual</h2></div><span id="draft-count" class="count-pill">0</span></div>
+        <label class="order-label-field" for="draft-label">Etiqueta del pedido <small>(opcional)</small><input id="draft-label" type="text" maxlength="60" placeholder="Ej. A domicilio · Ana" autocomplete="off"></label>
+        <div id="draft-items" class="draft-items"></div>
+        <div class="extra-box">
+          <div class="extra-heading"><strong>Extras</strong><button id="add-extra" type="button" class="text-button">+ Agregar</button></div>
+          <div id="draft-extras"></div>
+        </div>
+        <div class="totals">
+          <div><span>Subtotal</span><span id="draft-subtotal">$0.00</span></div>
+          <div><span>Extras</span><span id="draft-extras-total">$0.00</span></div>
+          <div class="grand-total"><span>TOTAL</span><strong id="draft-total">$0.00</strong></div>
+        </div>
+        <button id="create-order" type="button" class="primary-button" disabled>Crear pedido <span aria-hidden="true">→</span></button>
+      </section>
+      <section class="sales-section" aria-labelledby="sales-title">
+        <div class="section-title"><div><p class="eyebrow">CORTE ACTUAL</p><h2 id="sales-title">Ventas del día</h2></div><span aria-hidden="true">↗</span></div>
+        <div class="sales-number"><strong id="sales-count">0</strong><span>ventas pagadas</span></div>
+        <div class="sales-amount" id="sales-total">$0.00</div>
+        <p>Se actualiza al marcar un pedido como pagado.</p>
+      </section>
+    </aside>
+  </main>
+
+  <section id="order-queue" class="queue" aria-labelledby="queue-title">
+    <div class="queue-heading"><p class="eyebrow">EN SERVICIO</p><h2 id="queue-title">Pedidos abiertos <span id="open-count">0</span></h2></div>
+    <div id="queue-items" class="queue-items"></div>
+    <div class="queue-actions"><button id="save-file" type="button">Guardar expediente <span aria-hidden="true">↓</span></button><button id="open-file" type="button">Abrir expediente <span aria-hidden="true">↗</span></button></div>
+    <button id="hide-queue" class="queue-toggle" type="button" aria-label="Ocultar barra de pedidos" aria-controls="order-queue" aria-expanded="true" title="Ocultar barra de pedidos"><span aria-hidden="true">⌄</span></button>
+  </section>
+  <button id="show-queue" class="queue-tab" type="button" aria-label="Mostrar barra de pedidos" aria-controls="order-queue" aria-expanded="false" hidden><span aria-hidden="true">⌃</span> Pedidos <span id="collapsed-open-count">0</span></button>
+
+  <dialog id="builder-dialog" class="modal builder-modal" aria-labelledby="builder-title">
+    <div class="modal-head"><div><p class="eyebrow">PERSONALIZAR</p><h2 id="builder-title"></h2><p id="builder-note"></p></div><button type="button" class="icon-close" data-close-dialog aria-label="Cerrar">×</button></div>
+    <div id="builder-fields" class="builder-fields"></div>
+    <div class="modal-footer"><span id="builder-price"></span><button id="builder-add" type="button" class="primary-button">Agregar al pedido</button></div>
+  </dialog>
+
+  <dialog id="order-dialog" class="modal order-modal" aria-labelledby="order-title">
+    <div class="modal-head"><div><p class="eyebrow">DESGLOSE DE PEDIDO</p><h2 id="order-title"></h2><span id="order-status" class="status-badge"></span></div><button type="button" class="icon-close red-close" data-close-dialog aria-label="Cerrar">×</button></div>
+    <div class="order-modal-body"><div class="order-visual"><strong id="order-item-count" class="order-item-count"></strong><div id="order-gallery" class="order-gallery" role="list" aria-label="Productos del pedido"></div><span id="order-created"></span></div><div class="order-detail"><div class="order-detail-scroll"><label class="order-label-field" for="order-label">Etiqueta del pedido <small>(opcional)</small><input id="order-label" type="text" maxlength="60" placeholder="Ej. A domicilio · Ana" autocomplete="off"></label><div id="order-lines"></div><div class="order-extras-head"><strong>Extras</strong><button id="order-add-extra" type="button" class="text-button">+ Agregar</button></div><div id="order-extras"></div></div><div class="order-totals"><div><span>Subtotal</span><span id="order-subtotal"></span></div><div><span>Extras</span><span id="order-extras-total"></span></div><div class="grand-total"><span>TOTAL</span><strong id="order-total"></strong></div></div></div></div>
+    <div class="order-actions"><button id="confirm-order" type="button" class="primary-button" hidden>Confirmar pedido</button><button id="mark-ready" type="button" class="ready-button">PEDIDO LISTO</button><button id="mark-paid" type="button" class="paid-button">PEDIDO PAGADO</button></div>
+  </dialog>
+
+  <dialog id="extra-dialog" class="modal small-modal" aria-labelledby="extra-title">
+    <div class="modal-head"><div><p class="eyebrow">CARGO ADICIONAL</p><h2 id="extra-title">Agregar extra</h2></div><button type="button" class="icon-close" data-close-dialog aria-label="Cerrar">×</button></div>
+    <form id="extra-form"><label>Monto Extra ($)<input name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" required placeholder="15.00"></label><label>Concepto / Descripción<input name="description" type="text" maxlength="100" required placeholder="Extra crema whipped"></label><button type="submit" class="primary-button">Agregar extra</button></form>
+  </dialog>
+
+  <dialog id="history-dialog" class="modal history-modal" aria-labelledby="history-title">
+    <div class="modal-head">
+      <div><p class="eyebrow">EXPEDIENTE LOCAL</p><h2 id="history-title">Historial de pedidos</h2></div>
+      <button type="button" class="icon-close" data-close-dialog aria-label="Cerrar">×</button>
+    </div>
+    <div id="history-layout" class="history-layout">
+      <aside class="history-sidebar" aria-labelledby="history-days-title">
+        <h3 id="history-days-title">Días registrados</h3>
+        <div id="history-days" class="history-days" role="group" aria-labelledby="history-days-title"></div>
+      </aside>
+      <section id="history-detail" class="history-detail" aria-labelledby="history-day-title" tabindex="0">
+        <div class="history-day-heading">
+          <p class="eyebrow">CORTE DEL DÍA</p>
+          <h3 id="history-day-title" aria-live="polite" aria-atomic="true"></h3>
+          <p id="history-day-meta"></p>
+        </div>
+        <p class="history-note">Ventas y productos: solo PAGADOS, por fecha local de pago. Los pendientes se muestran por fecha de creación.</p>
+        <dl id="history-summary" class="history-summary" aria-label="Ventas y productos del día"></dl>
+        <p class="history-note">Los combos cuentan sus productos incluidos; cada Caja Salvaje cuenta como un producto.</p>
+        <p id="history-uncategorized" class="history-note" hidden></p>
+        <div class="history-orders-heading"><h3>Pedidos del día</h3><span id="history-order-count"></span></div>
+        <div id="history-list" class="history-list"></div>
+      </section>
+    </div>
+    <p id="history-empty" class="empty-state" hidden>Aún no hay pedidos en el historial.</p>
+  </dialog>
+  <dialog id="options-dialog" class="modal small-modal" aria-labelledby="options-title"><div class="modal-head"><div><p class="eyebrow">DATOS LOCALES</p><h2 id="options-title">Opciones</h2></div><button type="button" class="icon-close" data-close-dialog aria-label="Cerrar">×</button></div><div class="option-list"><button id="export-json" type="button">Guardar expediente JSON <span>↓</span></button><button id="export-csv" type="button">Exportar para Excel (CSV) <span>↓</span></button><button id="import-file" type="button">Abrir expediente JSON / CSV <span>↗</span></button><button id="reset-day" type="button" class="danger-button">Reiniciar datos para un nuevo día <span>↻</span></button></div><p class="option-note">Los datos permanecen en este navegador. Guarda un expediente para tener una copia de respaldo.</p></dialog>
+  <dialog id="reset-dialog" class="modal small-modal" aria-labelledby="reset-title" aria-describedby="reset-description">
+    <div class="modal-head"><h2 id="reset-title">¿Reiniciar el programa?</h2><button type="button" class="icon-close" data-close-dialog aria-label="Cerrar">×</button></div>
+    <div class="reset-content"><p id="reset-description">Se eliminarán todos los pedidos, las ventas y el historial guardados en este navegador, además del pedido actual. La numeración volverá a 1.</p><p>Guarda un expediente si quieres conservar estos datos antes de comenzar un nuevo día.</p><button id="backup-before-reset" type="button" class="text-button">Guardar expediente JSON</button><div class="reset-actions"><button type="button" class="secondary-button" data-close-dialog autofocus>Cancelar</button><button id="confirm-reset" type="button" class="danger-button">Sí, reiniciar datos</button></div></div>
+  </dialog>
+  <input id="file-input" type="file" accept=".json,.csv,application/json,text/csv" hidden>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="es-MX">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#183d32">
+  <meta name="description" content="Catálogo y pedidos de Amor & Amor Cafetería.">
+  <title>Amor & Amor · Punto de venta</title>
+  <link rel="stylesheet" href="css/styles.css">
+  <link rel="stylesheet" href="css/pos-features.css">
+  <script src="js/menuData.js" defer></script>
+  <script src="js/orderCore.js" defer></script>
+  <script src="js/orders.js" defer></script>
+  <script src="js/history.js" defer></script>
+  <script src="js/storage.js" defer></script>
+  <script src="js/media.js" defer></script>
+  <script src="js/salesUI.js" defer></script>
+  <script src="js/app.js" defer></script>
+</head>
+<body>
+  <header class="topbar">
+    <a class="brand" href="./" aria-label="Amor y Amor, inicio"><img src="assets/img/logo.png" alt="Amor & Amor Cafetería" width="180" height="72"></a>
+    <div class="topbar-title"><span class="status-dot" aria-hidden="true"></span><span>Punto de venta</span><span class="header-divider"></span><span class="muted">Cocina con amor</span></div>
+    <nav class="header-actions" aria-label="Ventas y expedientes"><button id="history-button" type="button">Historial</button><button id="load-expediente" type="button">Cargar expediente</button><button id="save-expediente" type="button">Guardar expediente</button><a class="menu-source" href="assets/Menu%20Amor%20%26%20Amor.pdf" target="_blank" rel="noopener">Menú ↗</a></nav>
+  </header>
+
+  <main class="workspace">
+    <section class="catalog" aria-labelledby="catalog-title">
+      <div class="catalog-heading">
+        <div><p class="eyebrow">AMOR & AMOR CAFETERÍA</p><h1 id="catalog-title">Un buen día empieza aquí.</h1><p class="heading-note">Elige, personaliza y prepara tu pedido.</p></div>
+        <div class="heading-art" aria-hidden="true"><img src="assets/img/hotcakes.png" alt="" width="175" height="135"><span>Hecho con amor</span></div>
+      </div>
+      <div id="macro-tabs" class="macro-tabs" role="tablist" aria-label="Categorías del menú"></div>
+      <section id="catalog-panel" role="tabpanel" aria-labelledby="tab-alimentos">
+        <div class="filter-row"><div id="subcategory-chips" class="subcategory-chips" role="group" aria-label="Subcategorías"></div></div>
+        <div class="catalog-toolbar">
+          <div><h2 id="section-title">Alimentos</h2><p id="product-count" class="muted" aria-live="polite"></p></div>
+          <label class="search-field"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.5" cy="10.5" r="6.5"></circle><path d="m16 16 4.5 4.5"></path></svg><span class="sr-only">Buscar en todo el menú</span><input id="product-search" type="search" placeholder="Buscar en todo el menú…" autocomplete="off" aria-describedby="global-search-note"></label>
+        </div>
+        <p id="global-search-note" class="global-search-note" hidden>Resultados de todas las categorías. Borra la búsqueda para volver a los filtros.</p>
+        <div id="product-grid" class="product-grid"></div>
+        <div id="catalog-empty" class="catalog-empty" hidden><span aria-hidden="true">⌕</span><h3 id="catalog-empty-title">No encontramos productos</h3><p id="catalog-empty-note">Prueba con otro nombre.</p></div>
+        <p class="catalog-tip"><span aria-hidden="true">✧</span> Cada detalle cuenta. Los productos con opciones se personalizan antes de agregarlos.</p>
+      </section>
+    </section>
+
+    <aside id="order-panel" class="order-panel" aria-labelledby="order-title">
+      <div class="order-heading"><div><p class="eyebrow">TU SELECCIÓN</p><h2 id="order-title" tabindex="-1">Pedido actual</h2></div><span id="order-count" class="count-badge">0</span></div>
+      <label class="order-label" for="order-label">Mesa o nombre <span class="muted">· opcional</span><input id="order-label" type="text" maxlength="60" placeholder="Ej. Mesa 03" autocomplete="off"></label>
+      <div id="order-items" class="order-items" aria-label="Productos del pedido"></div>
+      <div class="order-bottom"><div class="draft-actions"><button id="add-extra" class="secondary-button" type="button">Añadir Extra +</button><button id="clear-order" class="text-button" type="button" disabled>Vaciar pedido</button></div><div class="order-total"><span>Total</span><strong id="order-total">$0.00</strong></div><p class="total-note">Incluye los extras seleccionados</p><button id="review-order" class="primary-button" type="button" disabled>Crear pedido <span aria-hidden="true">→</span></button><p class="local-note"><span class="status-dot" aria-hidden="true"></span><span id="storage-status">Expediente guardado en este navegador</span></p></div>
+    </aside>
+  </main>
+  <button id="mobile-order-link" class="mobile-order-link" type="button" aria-controls="order-panel" hidden><span>Ver pedido <span id="mobile-order-count" class="mobile-count"></span></span><strong id="mobile-order-total"></strong><span aria-hidden="true">↓</span></button>
+  <footer class="page-footer"><span>Amor & Amor <span aria-hidden="true">♡</span></span><span>Buenos desayunos, buenos momentos.</span><span>Precios en MXN</span></footer>
+
+  <dialog id="modifier-dialog" class="modal" aria-labelledby="modifier-title" aria-describedby="modifier-description">
+    <form id="modifier-form" novalidate>
+      <div class="modal-heading"><div><p class="eyebrow">A TU GUSTO</p><h2 id="modifier-title"></h2></div><button class="close-button" type="button" data-close aria-label="Cerrar personalización">×</button></div>
+      <p id="modifier-description" class="modal-description"></p>
+      <div id="modifier-fields" class="modifier-fields"></div>
+      <label class="notes-field">Nota para cocina <span class="muted">· opcional</span><textarea id="modifier-note" maxlength="200" rows="2" placeholder="Algún detalle para preparar tu platillo…"></textarea></label>
+      <p id="modifier-error" class="form-error" role="alert" hidden></p>
+      <div class="modal-footer"><div><span class="muted">Precio por unidad</span><strong id="modifier-total"></strong></div><button class="primary-button" type="submit">Agregar al pedido <span aria-hidden="true">+</span></button></div>
+    </form>
+  </dialog>
+
+  <dialog id="review-dialog" class="modal review-modal" aria-labelledby="review-title">
+    <div class="modal-heading"><div><p class="eyebrow">TODO LISTO</p><h2 id="review-title">Revisa tu pedido</h2></div><button class="close-button" type="button" data-close aria-label="Cerrar revisión">×</button></div>
+    <p id="review-label" class="modal-description"></p><div id="review-items" class="review-items"></div><div class="review-total"><span>Total del pedido</span><strong id="review-total"></strong></div><p class="muted export-note">Se guardará en este dispositivo y aparecerá en Pedidos abiertos.</p><button id="confirm-order" class="primary-button" type="button">Confirmar pedido <span aria-hidden="true">✓</span></button>
+  </dialog>
+  <dialog id="clear-dialog" class="modal small-modal" aria-labelledby="clear-title"><div class="modal-heading"><h2 id="clear-title">¿Vaciar este pedido?</h2><button type="button" class="close-button" data-close aria-label="Cerrar">×</button></div><p class="modal-description">Se quitarán los productos y sus personalizaciones del borrador actual.</p><div class="confirm-actions"><button type="button" class="secondary-button" data-close autofocus>Conservar pedido</button><button id="confirm-clear" type="button" class="primary-button">Vaciar pedido</button></div></dialog>
+
+  <dialog id="extra-dialog" class="modal small-modal" aria-labelledby="extra-title">
+    <form id="extra-form" novalidate><div class="modal-heading"><div><p class="eyebrow">PRODUCTO PERSONALIZADO</p><h2 id="extra-title">Añadir Extra</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar extras">×</button></div>
+      <label class="extra-field" for="extra-concept">Concepto<input id="extra-concept" name="concepto" type="text" maxlength="100" required placeholder="Descripción del producto" autofocus></label>
+      <label class="extra-field" for="extra-amount">Monto ($)<input id="extra-amount" name="monto" type="text" inputmode="decimal" required placeholder="Ej. 45.50"></label>
+      <p id="extra-error" class="form-error" role="alert" hidden></p><p class="group-help">Este ítem se registra como extra personalizado, sin asignar una categoría del menú.</p><button type="submit" class="primary-button">Añadir al pedido +</button>
+    </form>
+  </dialog>
+
+  <dialog id="history-dialog" class="modal history-modal" aria-labelledby="history-title">
+    <div class="modal-heading"><div><p class="eyebrow">VENTAS DEL RESTAURANTE</p><h2 id="history-title">Historial de pedidos</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar historial">×</button></div>
+    <div id="history-layout" class="history-layout"><aside class="history-sidebar" aria-labelledby="history-days-title"><h3 id="history-days-title">Días registrados</h3><div id="history-days" class="history-days" role="group" aria-labelledby="history-days-title"></div></aside>
+      <section id="history-detail" class="history-detail" aria-labelledby="history-day-title" tabindex="0"><p class="eyebrow">CORTE DEL DÍA</p><h3 id="history-day-title" aria-live="polite"></h3><p class="history-note">Ventas por fecha de pago de cada producto, en horario de Mérida.</p><div id="history-summary" class="history-summary"></div><div id="history-category-kpis" class="history-category-kpis"></div><p id="history-extra-note" class="history-note"></p><div class="history-orders-heading"><h3>Pedidos del día</h3><span id="history-order-count"></span></div><div id="history-orders" class="history-orders"></div></section>
+    </div><p id="history-empty" class="empty-state" hidden>Aún no hay pedidos registrados.</p>
+  </dialog>
+
+  <dialog id="load-dialog" class="modal load-modal" aria-labelledby="load-title">
+    <div class="modal-heading"><div><p class="eyebrow">GUARDADO EN ESTE DISPOSITIVO</p><h2 id="load-title">Cargar Expediente</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar expedientes">×</button></div>
+    <p class="modal-description">Selecciona un día para consultar su corte y sus pedidos.</p><div id="load-days" class="load-days" role="group" aria-label="Expedientes por día"></div><p id="load-empty" class="empty-state" hidden>No hay días guardados todavía.</p><button id="load-selected-day" type="button" class="primary-button" disabled>Abrir expediente →</button>
+  </dialog>
+
+  <dialog id="ticket-dialog" class="modal ticket-modal" aria-labelledby="ticket-title">
+    <div class="modal-heading"><div><p class="eyebrow">SEGUIMIENTO DEL PEDIDO</p><h2 id="ticket-title"></h2></div><button type="button" class="close-button" data-close aria-label="Cerrar pedido">×</button></div><p id="ticket-meta" class="modal-description"></p><div id="ticket-lines" class="ticket-lines"></div><div class="review-total"><span>Total del pedido</span><strong id="ticket-total"></strong></div><div class="ticket-actions"><button id="prepare-all" type="button" class="secondary-button">Preparar todo</button><button id="pay-all" type="button" class="primary-button">Marcar todo PAGADO</button></div>
+  </dialog>
+
+  <section id="open-orders-bar" class="open-orders-bar" aria-labelledby="open-orders-title"><div class="queue-heading"><h2 id="open-orders-title">Pedidos abiertos <span id="open-orders-count">0</span></h2><button id="toggle-queue" type="button" aria-expanded="true" aria-controls="open-orders-list">Ocultar ↓</button></div><div id="open-orders-list" class="open-orders-list"></div></section>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+  <noscript><p class="noscript">Activa JavaScript para ver el catálogo y preparar pedidos.</p></noscript>
+</body>
+</html>
