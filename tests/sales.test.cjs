@@ -10,7 +10,7 @@ const localStorage = {
   setItem: (key, value) => { if (failWrite) throw new Error('QuotaExceededError'); data.set(key, value); }
 };
 const context = vm.createContext({ Intl, localStorage });
-for (const file of ['menuData.js', 'orderCore.js', 'orders.js', 'history.js', 'storage.js']) vm.runInContext(fs.readFileSync(path.join(root, 'js', file), 'utf8'), context);
+for (const file of ['menuData.js', 'orderCore.js', 'orders.js', 'history.js', 'cash.js', 'storage.js']) vm.runInContext(fs.readFileSync(path.join(root, 'js', file), 'utf8'), context);
 const { AmorPOS: pos, AmorOrders: orders, AmorHistory: history, AmorStorage: storage } = context;
 const food = { ...pos.crearPartida('chilaquiles-con-pollo-o-huevo', { salsa: 'roja', proteina: 'pollo', extras: ['huevo', 'pollo'] }), cantidad: 2 };
 const coffee = pos.crearPartida('cafe-americano', { extras: ['leche-deslactosada', 'shot-de-espresso'] });

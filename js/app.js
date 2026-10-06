@@ -6,6 +6,7 @@
   let expediente;
   let storageError = '';
   let salesUI = null;
+  let cashUI = null;
   try { expediente = AmorStorage.cargarExpediente(); }
   catch (error) { expediente = AmorStorage.vacio(); storageError = error.message; }
   const icons = {
@@ -58,7 +59,7 @@
       state.partidas = saved.borrador.partidas;
       if ($('order-label').value !== saved.borrador.etiqueta) $('order-label').value = saved.borrador.etiqueta;
       $('storage-status').textContent = 'Expediente guardado en este navegador';
-      renderOrder(); salesUI?.renderAll();
+      renderOrder(); salesUI?.renderAll(); cashUI?.renderAll();
       return true;
     } catch (error) {
       $('storage-status').textContent = 'No se pudo guardar el expediente';
@@ -70,6 +71,7 @@
     try {
       expediente = AmorStorage.cargarExpediente();
       storageError = '';
+      cashUI?.renderAll();
       return true;
     } catch (error) { notify(`No se pudo cargar: ${error.message}`); return false; }
   }
@@ -370,7 +372,10 @@
       const pedido = AmorOrders.nuevoPedido(state.partidas, $('order-label').value, next.siguienteNumero);
       next.pedidos.push(pedido); next.siguienteNumero++;
       next.borrador = { etiqueta: '', partidas: [] };
-      if (commit(next)) { $('review-dialog').close(); notify(`Pedido N° ${pedido.numero} guardado`); }
+      if (commit(next)) {
+        $('review-dialog').close(); notify(`Pedido N° ${pedido.numero} guardado`);
+        AmorPrinting.imprimirComandas(pedido).catch(error => notify(`Pedido guardado. No se abrió la impresión: ${error.message}. Puedes reimprimir sus comandas.`));
+      }
     } catch (error) { notify(error.message); }
   });
   globalThis.guardarExpediente = () => {
@@ -379,7 +384,9 @@
     return saved;
   };
   $('save-expediente').addEventListener('click', globalThis.guardarExpediente);
-  salesUI = AmorSalesUI.iniciar({ getState: currentState, commit, notify, reload: reloadExpediente });
+  cashUI = AmorCashUI.iniciar({ getState: currentState, commit, notify });
+  salesUI = AmorSalesUI.iniciar({ getState: currentState, commit, notify, reload: reloadExpediente,
+    solicitarCobro: (pedidoId, partidaId) => cashUI.solicitarCobro(pedidoId, partidaId) });
   window.addEventListener('storage', event => {
     if (event.key !== AmorStorage.KEY) return;
     if (reloadExpediente()) {
@@ -390,4 +397,6 @@
   });
   renderTabs(); renderNavigation(); renderProducts(); restoreDraft(); renderOrder();
   salesUI.renderAll();
+  cashUI.renderAll();
+  if (!expediente.caja.abierta) cashUI.ofrecerApertura();
 })();

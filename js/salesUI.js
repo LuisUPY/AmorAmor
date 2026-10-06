@@ -32,7 +32,7 @@ globalThis.AmorSalesUI = (() => {
   function resumenOpciones(partida) {
     return partida.selecciones.map(s => s.texto ? `${s.grupoNombre}: ${s.texto}` : `${s.grupoNombre}: ${s.valores.map(v => v.nombre).join(', ')}`).join(' · ');
   }
-  function iniciar({ getState, commit, notify, reload }) {
+  function iniciar({ getState, commit, notify, reload, solicitarCobro }) {
     let selectedDay = null;
     let selectedLoadDay = null;
     let activeOrderId = null;
@@ -49,10 +49,11 @@ globalThis.AmorSalesUI = (() => {
       if (options) content.append(node('p', 'line-options', options));
       if (partida.nota) content.append(node('p', 'line-note', `Nota: ${partida.nota}`));
       content.append(estados(partida));
+      if (partida.pagado) content.append(node('p', 'line-options', `Método: ${partida.metodoPago === 'efectivo' ? 'Efectivo' : partida.metodoPago === 'tarjeta' ? 'Tarjeta/Transferencia' : 'Sin registrar (pago anterior)'}`));
       if (pedido) {
         const actions = node('div', 'line-state-actions');
         const prepare = button(partida.preparado ? 'Preparado ✓' : 'Marcar PREPARADO', 'secondary-button', () => cambiarEstado(pedido.id, partida.id, 'preparado'));
-        const pay = button(partida.pagado ? 'Pagado ✓' : 'Marcar PAGADO', 'secondary-button', () => cambiarEstado(pedido.id, partida.id, 'pagado'));
+        const pay = button(partida.pagado ? 'Pagado ✓' : 'Cobrar producto', 'secondary-button', () => solicitarCobro(pedido.id, partida.id));
         prepare.disabled = partida.preparado; pay.disabled = partida.pagado;
         actions.append(prepare, pay); content.append(actions);
       }
@@ -60,11 +61,12 @@ globalThis.AmorSalesUI = (() => {
       return row;
     }
     function cambiarEstado(pedidoId, partidaId, accion) {
+      if (accion === 'pagado') { solicitarCobro(pedidoId, partidaId); return; }
       const next = getState();
       const index = next.pedidos.findIndex(pedido => pedido.id === pedidoId);
       if (index < 0) { notify('No se encontró el pedido.'); return; }
       next.pedidos[index] = AmorOrders.marcarPartida(next.pedidos[index], partidaId, accion);
-      if (commit(next)) notify(accion === 'pagado' ? 'Pago guardado en el expediente' : 'Preparación guardada');
+      if (commit(next)) notify('Preparación guardada');
     }
     function abrirPedido(id) {
       activeOrderId = id;
@@ -195,6 +197,11 @@ globalThis.AmorSalesUI = (() => {
     });
     $('prepare-all').addEventListener('click', () => cambiarEstado(activeOrderId, 'todos', 'preparado'));
     $('pay-all').addEventListener('click', () => cambiarEstado(activeOrderId, 'todos', 'pagado'));
+    $('reprint-order').addEventListener('click', () => {
+      const pedido = getState().pedidos.find(p => p.id === activeOrderId);
+      if (!pedido) return;
+      AmorPrinting.imprimirComandas(pedido).catch(error => notify(`No se abrió la impresión: ${error.message}`));
+    });
     $('toggle-queue').addEventListener('click', () => {
       const next = getState(); next.colaOculta = !next.colaOculta;
       commit(next);

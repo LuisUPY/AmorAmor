@@ -12,7 +12,7 @@ const mime = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css
 async function main() {
   await fs.mkdir(output, { recursive: true });
   const core = vm.createContext({ Intl });
-  for (const file of ['menuData.js', 'orderCore.js', 'orders.js', 'history.js', 'storage.js']) {
+  for (const file of ['menuData.js', 'orderCore.js', 'orders.js', 'history.js', 'cash.js', 'storage.js']) {
     vm.runInContext(await fs.readFile(path.join(root, 'js', file), 'utf8'), core);
   }
   let previous = core.AmorOrders.nuevoPedido([{ ...core.AmorPOS.crearPartida('orden-de-papas'), cantidad: 2 }, core.AmorPOS.crearPartida('latte')], 'Día anterior', 1, '2026-10-03T15:00:00Z');
@@ -37,6 +37,7 @@ async function main() {
     browser = await chromium.launch({ headless: true });
     const context = await browser.newContext({ viewport: { width: 1440, height: 1000 } });
     await context.addInitScript(({ key, state }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state)); }, { key: core.AmorStorage.KEY, state: seeded });
+    await context.addInitScript(() => { window.print = () => setTimeout(() => window.dispatchEvent(new Event('afterprint')), 0); });
     const page = await context.newPage();
     await page.clock.setFixedTime(new Date('2026-10-05T16:00:00Z'));
     const errors = []; let downloads = 0;
@@ -45,6 +46,7 @@ async function main() {
     const url = `http://127.0.0.1:${server.address().port}`;
     await page.goto(url);
     await page.waitForSelector('.product-card');
+    await page.locator('#cash-open-dialog [data-close]').click();
     assert.equal(await page.getByRole('tab').count(), 5);
     assert.equal(await page.locator('.product-card').count(), 32);
     assert.equal(await page.locator('#open-orders-count').textContent(), '0');
@@ -111,6 +113,7 @@ async function main() {
     await page.locator('#save-expediente').click();
     assert.equal(downloads, 0);
     await page.reload(); await page.waitForSelector('.product-card');
+    await page.locator('#cash-open-dialog [data-close]').click();
     assert.equal(await page.locator('#order-total').textContent(), '$662.35');
     assert.equal(await page.locator('#order-label').inputValue(), 'Mesa 03');
     await page.locator('#review-order').click();
@@ -125,9 +128,14 @@ async function main() {
     assert.ok(thumbnails.every(t => t.loaded));
     assert.deepEqual(thumbnails.map(t => t.src), ['assets/img/categorias/alimentos.svg', 'assets/img/categorias/bebidas.svg', 'assets/img/categorias/entradas.svg', 'assets/img/categorias/extra.svg']);
     await page.reload(); await page.waitForSelector('.product-card');
+    await page.locator('#cash-open-dialog [data-close]').click();
     assert.equal(await page.locator('#open-orders-count').textContent(), '1');
     await page.locator('[data-pedido="pedido-3"]').click();
-    await page.locator('#ticket-lines .ticket-line').first().getByRole('button', { name: 'Marcar PAGADO', exact: true }).click();
+    await page.locator('#ticket-lines .ticket-line').first().getByRole('button', { name: 'Cobrar producto', exact: true }).click();
+    await page.locator('#cash-opening-fund').fill('500');
+    await page.locator('#cash-open-form button[type="submit"]').click();
+    await page.locator('#cash-payment-form input[value="efectivo"]').check();
+    await page.locator('#cash-payment-form button[type="submit"]').click();
     assert.equal(await page.locator('#ticket-lines .paid').count(), 1);
     assert.equal(await page.locator('#open-orders-count').textContent(), '1');
     await page.locator('#ticket-dialog [data-close]').click();
@@ -163,6 +171,8 @@ async function main() {
     await page.locator('#toggle-queue').click();
     await page.locator('[data-pedido="pedido-3"]').click();
     await page.locator('#pay-all').click();
+    await page.locator('#cash-payment-form input[value="tarjeta"]').check();
+    await page.locator('#cash-payment-form button[type="submit"]').click();
     assert.equal(await page.locator('#ticket-lines .paid').count(), 4);
     assert.equal(await page.locator('#open-orders-count').textContent(), '1'); // Pagado, pero falta preparar.
     await page.locator('#prepare-all').click();

@@ -3,7 +3,7 @@ globalThis.AmorStorage = (() => {
   'use strict';
   const KEY = 'amor-amor-pos:expediente:v2';
   const LEGACY_KEY = 'amor-amor-pos:borrador:v1';
-  const vacio = () => ({ version: 2, revision: 0, siguienteNumero: 1, pedidos: [], borrador: { etiqueta: '', partidas: [] }, colaOculta: false, guardadoEn: null });
+  const vacio = () => ({ version: 2, revision: 0, siguienteNumero: 1, pedidos: [], borrador: { etiqueta: '', partidas: [] }, caja: AmorCash.cajaVacia(), historialCortes: [], colaOculta: false, guardadoEn: null });
   const copia = value => JSON.parse(JSON.stringify(value));
   const fechaValida = valor => typeof valor === 'string' && Number.isFinite(Date.parse(valor));
   function validarPartida(partida) {
@@ -44,6 +44,12 @@ globalThis.AmorStorage = (() => {
     state.siguienteNumero = Math.max(1, ...numeros) + (numeros.size ? 1 : 0);
     if (Number.isSafeInteger(raw.siguienteNumero)) state.siguienteNumero = Math.max(state.siguienteNumero, raw.siguienteNumero);
     state.colaOculta = !!state.colaOculta;
+    // Los expedientes anteriores conservan sus ventas; empiezan sin turno activo.
+    state.caja = AmorCash.normalizarCaja(state.caja);
+    if (state.historialCortes === undefined) state.historialCortes = [];
+    if (!Array.isArray(state.historialCortes)) throw new Error('Historial de cortes inválido.');
+    state.historialCortes = state.historialCortes.map(AmorCash.normalizarCorte);
+    AmorCash.validarVinculos(state.pedidos, state.caja, state.historialCortes);
     return state;
   }
   function cargarExpediente() {
