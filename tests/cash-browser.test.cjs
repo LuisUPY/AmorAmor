@@ -54,9 +54,14 @@ async function main() {
       Storage.prototype.setItem = () => { throw new Error('QuotaExceededError'); };
     });
     const restoreWrites = () => page.evaluate(() => { Storage.prototype.setItem = window.originalSetItem; });
-    const submitPayment = async method => {
-      await page.locator(`#cash-payment-form input[value="${method}"]`).check();
-      await page.locator('#cash-payment-form button[type="submit"]').click();
+    const setPayment = async (cash, card) => {
+      await page.locator('#cash-payment-cash').fill(cash);
+      await page.locator('#cash-payment-card').fill(card);
+    };
+    const submitPayment = async (cash, card) => {
+      await setPayment(cash, card);
+      assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), false);
+      await page.locator('#cash-payment-confirm').click();
     };
 
     // La apertura inicial puede cerrarse para navegar; sigue siendo requisito de cualquier cobro.
@@ -137,26 +142,66 @@ async function main() {
     assert.equal((await snapshot()).caja.fondoInicialCentavos, 0);
     assert.equal(await page.locator('#cash-payment-dialog').isVisible(), true);
 
-    // No debe existir un método preseleccionado que permita registrar un pago por accidente.
-    assert.equal(await page.locator('#cash-payment-form input:checked').count(), 0);
-    await page.locator('#cash-payment-form button[type="submit"]').click();
+    // El pago comienza en cero y la validación reacciona sin enviar el formulario.
+    assert.equal(await page.locator('#cash-payment-cash').inputValue(), '0');
+    assert.equal(await page.locator('#cash-payment-card').inputValue(), '0');
+    assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), true);
+    assert.match(await page.locator('#cash-payment-status').textContent(), /Faltan:.*460\.00/);
+    await setPayment('200', '150');
+    assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), true);
+    assert.match(await page.locator('#cash-payment-status').textContent(), /Faltan:.*110\.00/);
+    for (const [cash, card] of [['-1', '0'], ['1.001', '0'], ['500', '460.01']]) {
+      await setPayment(cash, card);
+      assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), true);
+    }
+    await setPayment('310', '150');
+    assert.equal(await page.locator('#cash-payment-status').textContent(), 'Cobro completo');
+    assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), false);
+    await setPayment('500', '150');
+    assert.match(await page.locator('#cash-payment-status').textContent(), /Cambio a entregar:.*190\.00/);
+    assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), false);
+    await page.screenshot({ path: path.join(output, 'payment-mixed-1440.png') });
+    for (const width of [390, 320]) {
+      await page.setViewportSize({ width, height: 844 });
+      assert.equal(await page.locator('#cash-payment-dialog').evaluate(n => n.scrollWidth <= n.clientWidth), true, `Cobro a ${width}px`);
+      assert.equal(await page.locator('#cash-payment-form input').evaluateAll(inputs => inputs.every(input => {
+        const bounds = input.getBoundingClientRect();
+        const dialog = input.closest('dialog').getBoundingClientRect();
+        return bounds.left >= dialog.left && bounds.right <= dialog.right;
+      })), true, `Campos de cobro a ${width}px`);
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Página con cobro a ${width}px`);
+    }
+    await page.screenshot({ path: path.join(output, 'payment-mixed-320.png') });
+    await page.setViewportSize({ width: 1440, height: 1000 });
     assert.equal(await page.locator('#cash-payment-dialog').isVisible(), true);
     assert.equal((await snapshot()).pedidos[0].partidas.some(p => p.pagado), false);
     const beforePaymentFailure = await snapshot();
     await failWrites();
-    await submitPayment('efectivo');
+    await page.locator('#cash-payment-confirm').click();
     assert.deepEqual(await snapshot(), beforePaymentFailure);
     assert.equal(await page.locator('#cash-payment-dialog').isVisible(), true);
     await restoreWrites();
-    await page.locator('#cash-payment-form button[type="submit"]').click();
+    await page.locator('#cash-payment-confirm').click();
     const cashPaid = await snapshot();
     assert.equal(cashPaid.pedidos[0].partidas.filter(p => p.pagado).length, 1);
     assert.equal(cashPaid.caja.pagos.length, 1);
+    assert.equal(cashPaid.pedidos[0].montoEfectivo, 310);
+    assert.equal(cashPaid.pedidos[0].montoTarjeta, 150);
+    assert.equal(cashPaid.pedidos[0].partidas[0].montoEfectivo, 310);
+    assert.equal(cashPaid.caja.pagos[0].montoEfectivoCentavos, 31000);
+    assert.equal(cashPaid.caja.pagos[0].montoTarjetaCentavos, 15000);
+    assert.equal(cashPaid.caja.pagos[0].metodo, undefined);
+    assert.match(await page.locator('#ticket-lines .ticket-line').first().textContent(), /Efectivo \$310\.00 · Tarjeta\/Transferencia \$150\.00/);
 
     await page.locator('#pay-all').click();
-    assert.equal(await page.locator('#cash-payment-form input:checked').count(), 0);
-    await submitPayment('tarjeta');
-    assert.equal((await snapshot()).pedidos[0].partidas.every(p => p.pagado), true);
+    assert.equal(await page.locator('#cash-payment-cash').inputValue(), '0');
+    assert.equal(await page.locator('#cash-payment-card').inputValue(), '0');
+    assert.equal(await page.locator('#cash-payment-confirm').isDisabled(), true);
+    await submitPayment('0', '202.35');
+    const fullyPaid = await snapshot();
+    assert.equal(fullyPaid.pedidos[0].partidas.every(p => p.pagado), true);
+    assert.equal(fullyPaid.pedidos[0].montoEfectivo, 310);
+    assert.equal(fullyPaid.pedidos[0].montoTarjeta, 352.35);
     await page.locator('#ticket-dialog [data-close]').click();
 
     await page.locator('#cash-expense-button').click();
@@ -172,8 +217,8 @@ async function main() {
     assert.equal((await snapshot()).caja.gastosDelDia.length, 1);
     await page.locator('#cash-close-button').click();
     const expected = {
-      fondoInicialCentavos: '$0.00', ventasEfectivoCentavos: '$460.00', gastosExtrasCentavos: '$25.35',
-      efectivoEsperadoCentavos: '$434.65', ventasTarjetaCentavos: '$202.35', totalVentasCentavos: '$662.35'
+      fondoInicialCentavos: '$0.00', ventasEfectivoCentavos: '$310.00', gastosExtrasCentavos: '$25.35',
+      efectivoEsperadoCentavos: '$284.65', ventasTarjetaCentavos: '$352.35', totalVentasCentavos: '$662.35'
     };
     for (const [key, value] of Object.entries(expected)) {
       assert.equal(await page.locator(`#cash-summary [data-value="${key}"]`).textContent(), value, key);
@@ -202,22 +247,22 @@ async function main() {
     assert.equal(closed.caja.pagos.length, 0);
     assert.equal(closed.caja.gastosDelDia.length, 0);
     assert.equal(closed.historialCortes.length, 1);
-    assert.equal(closed.historialCortes[0].ventasEfectivoCentavos, 46000);
-    assert.equal(closed.historialCortes[0].ventasTarjetaCentavos, 20235);
-    assert.equal(closed.historialCortes[0].efectivoEsperadoCentavos, 43465);
+    assert.equal(closed.historialCortes[0].ventasEfectivoCentavos, 31000);
+    assert.equal(closed.historialCortes[0].ventasTarjetaCentavos, 35235);
+    assert.equal(closed.historialCortes[0].efectivoEsperadoCentavos, 28465);
     assert.equal(closed.pedidos[0].partidas.every(p => p.pagado), true);
     await page.reload(); await page.waitForSelector('.product-card');
     await page.locator('#cash-open-dialog [data-close]').click();
     assert.equal((await snapshot()).historialCortes.length, 1);
     await page.locator('#cash-history-button').click();
-    assert.match(await page.locator('#cash-history-dialog').textContent(), /434\.65/);
+    assert.match(await page.locator('#cash-history-dialog').textContent(), /284\.65/);
     assert.match(await page.locator('#cash-history-dialog').textContent(), /Compra de hielo/);
     await page.locator('#cash-history-dialog [data-close]').click();
 
     // Reabrir no agrega las ventas ya cerradas al nuevo turno.
     await page.locator('#add-extra').click();
     await page.locator('#extra-concept').fill('Nuevo turno');
-    await page.locator('#extra-amount').fill('10');
+    await page.locator('#extra-amount').fill('350');
     await page.locator('#extra-form button[type="submit"]').click();
     await page.locator('#review-order').click();
     await page.locator('#confirm-order').click();
@@ -226,14 +271,19 @@ async function main() {
     assert.equal(await page.locator('#cash-open-dialog').isVisible(), true);
     await page.locator('#cash-opening-fund').fill('300.10');
     await page.locator('#cash-open-form button[type="submit"]').click();
-    await submitPayment('efectivo');
+    await setPayment('500', '0');
+    assert.match(await page.locator('#cash-payment-status').textContent(), /Cambio a entregar:.*150\.00/);
+    await submitPayment('500', '0');
     const reopened = await snapshot();
     assert.equal(reopened.caja.fondoInicialCentavos, 30010);
     assert.equal(reopened.caja.pagos.length, 1);
     assert.equal(reopened.historialCortes.length, 1);
+    assert.equal(reopened.pedidos[1].montoEfectivo, 350);
+    assert.equal(reopened.pedidos[1].montoTarjeta, 0);
+    assert.equal(reopened.caja.pagos[0].montoEfectivoCentavos, 35000);
     await page.locator('#ticket-dialog [data-close]').click();
     await page.locator('#cash-close-button').click();
-    assert.equal(await page.locator('#cash-summary [data-value="efectivoEsperadoCentavos"]').textContent(), '$310.10');
+    assert.equal(await page.locator('#cash-summary [data-value="efectivoEsperadoCentavos"]').textContent(), '$650.10');
 
     for (const width of [390, 320]) {
       await page.setViewportSize({ width, height: 844 });
@@ -242,7 +292,7 @@ async function main() {
     }
     assert.deepEqual(errors, []);
     await context.close();
-    console.log('✓ Caja: apertura requerida, pagos parciales por método, gastos, corte e historial; fallos de escritura atómicos; comandas y CSS térmico.');
+    console.log('✓ Caja: pagos mixtos, cambio neto, validación dinámica, corte e historial; fallos atómicos; comandas y CSS térmico.');
   } finally {
     await browser?.close();
     await new Promise(resolve => server.close(resolve));

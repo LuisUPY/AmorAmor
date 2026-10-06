@@ -9,8 +9,17 @@
 .cash-field input { display: block; width: 100%; padding: 12px; margin-top: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--cream); color: var(--ink); }
 .cash-field input:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
 .cash-modal .primary-button { width: 100%; justify-content: center; margin-top: 20px; }
-.cash-methods { border: 0; padding: 0; margin: 22px 0; }
-.cash-methods legend { font-size: 12px; margin-bottom: 8px; }
+.cash-payment-total { display: grid; gap: 8px; margin: 22px 0; padding: 22px 16px; border-radius: 12px; background: var(--cream); text-align: center; }
+.cash-payment-total > span { color: var(--muted); font-size: 13px; }
+.cash-payment-total > strong { color: var(--forest); font-size: clamp(30px, 7vw, 42px); line-height: 1.2; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.cash-payment-inputs { display: grid; gap: 16px; }
+.cash-payment-inputs .cash-field { margin: 0; line-height: 1.5; }
+.cash-payment-inputs input { font-size: 18px; font-variant-numeric: tabular-nums; }
+.cash-payment-status { margin: 18px 0 0; padding: 14px 16px; border: 1px solid; border-radius: 8px; font-size: 15px; line-height: 1.5; font-weight: 600; font-variant-numeric: tabular-nums; }
+.cash-payment-status[data-state="missing"], .cash-payment-status[data-state="invalid"] { color: #a32d35; background: #fff1f2; border-color: #efc5c9; }
+.cash-payment-status[data-state="complete"], .cash-payment-status[data-state="change"] { color: #246044; background: #edf8f0; border-color: #b7dcc3; }
+.cash-payment-status[data-state="change"] { font-size: 17px; }
+.cash-payment-modal .primary-button:disabled { cursor: not-allowed; opacity: .45; }
 .cash-summary { margin: 22px 0 18px; font-size: 12px; }
 .cash-summary-row { display: flex; justify-content: space-between; align-items: baseline; gap: 18px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .cash-summary dt { line-height: 1.6; min-width: 0; overflow-wrap: anywhere; }

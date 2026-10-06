@@ -134,8 +134,8 @@ async function main() {
     await page.locator('#ticket-lines .ticket-line').first().getByRole('button', { name: 'Cobrar producto', exact: true }).click();
     await page.locator('#cash-opening-fund').fill('500');
     await page.locator('#cash-open-form button[type="submit"]').click();
-    await page.locator('#cash-payment-form input[value="efectivo"]').check();
-    await page.locator('#cash-payment-form button[type="submit"]').click();
+    await page.locator('#cash-payment-cash').fill('460');
+    await page.locator('#cash-payment-confirm').click();
     assert.equal(await page.locator('#ticket-lines .paid').count(), 1);
     assert.equal(await page.locator('#open-orders-count').textContent(), '1');
     await page.locator('#ticket-dialog [data-close]').click();
@@ -171,8 +171,8 @@ async function main() {
     await page.locator('#toggle-queue').click();
     await page.locator('[data-pedido="pedido-3"]').click();
     await page.locator('#pay-all').click();
-    await page.locator('#cash-payment-form input[value="tarjeta"]').check();
-    await page.locator('#cash-payment-form button[type="submit"]').click();
+    await page.locator('#cash-payment-card').fill('202.35');
+    await page.locator('#cash-payment-confirm').click();
     assert.equal(await page.locator('#ticket-lines .paid').count(), 4);
     assert.equal(await page.locator('#open-orders-count').textContent(), '1'); // Pagado, pero falta preparar.
     await page.locator('#prepare-all').click();

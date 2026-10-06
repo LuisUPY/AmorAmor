@@ -119,17 +119,19 @@
     </form>
   </dialog>
 
-  <dialog id="cash-payment-dialog" class="modal small-modal cash-modal" aria-labelledby="cash-payment-title">
+  <dialog id="cash-payment-dialog" class="modal small-modal cash-modal cash-payment-modal" aria-labelledby="cash-payment-title" aria-describedby="cash-payment-note">
     <form id="cash-payment-form" novalidate>
-      <div class="modal-heading"><div><p class="eyebrow">REGISTRAR COBRO</p><h2 id="cash-payment-title">Método de pago</h2></div><button type="button" class="close-button" data-close aria-label="Cancelar cobro">×</button></div>
+      <div class="modal-heading"><div><p class="eyebrow">REGISTRAR COBRO</p><h2 id="cash-payment-title">Cobrar pedido</h2></div><button type="button" class="close-button" data-close aria-label="Cancelar cobro">×</button></div>
       <p id="cash-payment-note" class="modal-description"></p>
-      <div class="review-total"><span>Importe a cobrar</span><strong id="cash-payment-total"></strong></div>
-      <fieldset class="cash-methods"><legend>Selecciona el método de pago</legend>
-        <label class="option-choice"><input type="radio" name="metodoPago" value="efectivo" required> Efectivo</label>
-        <label class="option-choice"><input type="radio" name="metodoPago" value="tarjeta" required> Tarjeta/Transferencia</label>
-      </fieldset>
+      <div class="cash-payment-total"><span>Total a Pagar</span><strong id="cash-payment-total">$0.00</strong></div>
+      <div class="cash-payment-inputs">
+        <label class="cash-field" for="cash-payment-cash">Monto recibido en Efectivo ($)<input id="cash-payment-cash" name="efectivoRecibido" type="number" inputmode="decimal" min="0" step="0.01" value="0" required aria-describedby="cash-payment-help cash-payment-status" autofocus></label>
+        <label class="cash-field" for="cash-payment-card">Monto en Tarjeta/Transferencia ($)<input id="cash-payment-card" name="montoTarjeta" type="number" inputmode="decimal" min="0" step="0.01" value="0" required aria-describedby="cash-payment-help cash-payment-status"></label>
+      </div>
+      <p id="cash-payment-help" class="group-help">Puedes combinar ambos métodos. El cambio se entrega del efectivo recibido.</p>
+      <p id="cash-payment-status" class="cash-payment-status" data-state="missing" role="status" aria-live="polite" aria-atomic="true">Faltan: $0.00</p>
       <p id="cash-payment-error" class="form-error" role="alert" hidden></p>
-      <button type="submit" class="primary-button">Confirmar cobro</button>
+      <button id="cash-payment-confirm" type="submit" class="primary-button" disabled>Confirmar Pago</button>
     </form>
   </dialog>
 

@@ -64,7 +64,34 @@ globalThis.AmorCashUI = (() => {
       $('cash-payment-form').reset(); $('cash-payment-error').hidden = true;
       $('cash-payment-note').textContent = `Pedido N° ${pedido.numero} · ${pedido.etiqueta || 'Sin etiqueta'} · ${partidas.reduce((sum, p) => sum + p.cantidad, 0)} productos pendientes`;
       $('cash-payment-total').textContent = moneda(montoCentavos);
+      actualizarValidacionPago();
       if (!$('cash-payment-dialog').open) $('cash-payment-dialog').showModal();
+    }
+    function actualizarValidacionPago() {
+      const status = $('cash-payment-status');
+      const confirm = $('cash-payment-confirm');
+      confirm.disabled = true;
+      $('cash-payment-error').hidden = true;
+      if (!pendingPayment) return null;
+      try {
+        const pago = AmorCash.validarPago(pendingPayment.montoCentavos, $('cash-payment-cash').value, $('cash-payment-card').value);
+        if (!pago.completo) {
+          status.dataset.state = 'missing';
+          status.textContent = `Faltan: ${moneda(pago.faltanteCentavos)}`;
+        } else if (pago.cambioCentavos > 0) {
+          status.dataset.state = 'change';
+          status.textContent = `Cambio a entregar: ${moneda(pago.cambioCentavos)}`;
+        } else {
+          status.dataset.state = 'complete';
+          status.textContent = 'Cobro completo';
+        }
+        confirm.disabled = !pago.completo;
+        return pago;
+      } catch (error) {
+        status.dataset.state = 'invalid';
+        status.textContent = error.message;
+        return null;
+      }
     }
     function solicitarCobro(pedidoId, partidaId = 'todos') {
       try {
@@ -75,10 +102,10 @@ globalThis.AmorCashUI = (() => {
       } catch (error) { pendingPayment = null; notify(error.message); }
     }
     function renderCorte() {
-      const { caja } = getState();
+      const { caja, pedidos } = getState();
       $('close-shift').disabled = !caja.abierta || caja.turnoId !== closeShiftId;
       $('cash-close-note').textContent = caja.abierta ? `Turno abierto el ${horario.format(new Date(caja.abiertoEn))}. Importes en MXN.` : 'La caja está cerrada.';
-      resumenEn($('cash-summary'), AmorCash.resumirCaja(caja));
+      resumenEn($('cash-summary'), AmorCash.resumirCaja(caja, pedidos));
       $('cash-expenses-title').textContent = `Conceptos de gastos (${caja.gastosDelDia.length})`;
       gastosEn($('cash-expenses-list'), caja.gastosDelDia);
     }
@@ -99,8 +126,8 @@ globalThis.AmorCashUI = (() => {
       }));
     }
     function renderAll() {
-      const { caja } = getState();
-      const resumen = AmorCash.resumirCaja(caja);
+      const { caja, pedidos } = getState();
+      const resumen = AmorCash.resumirCaja(caja, pedidos);
       $('cash-status').textContent = caja.abierta ? `Caja abierta · Efectivo esperado ${moneda(resumen.efectivoEsperadoCentavos)}` : 'Caja cerrada · Abre un turno para cobrar';
       $('cash-status').dataset.open = String(caja.abierta);
       $('cash-open-button').disabled = caja.abierta;
@@ -125,25 +152,26 @@ globalThis.AmorCashUI = (() => {
       } catch (error) { mostrarError('cash-open-error', error.message); }
     });
     $('cash-payment-dialog').addEventListener('close', () => { pendingPayment = null; });
+    for (const id of ['cash-payment-cash', 'cash-payment-card']) $(id).addEventListener('input', actualizarValidacionPago);
     $('cash-payment-form').addEventListener('submit', event => {
       event.preventDefault();
       try {
         if (!pendingPayment) throw new Error('Vuelve a seleccionar el pedido que quieres cobrar.');
-        const metodo = $('cash-payment-form').querySelector('input[name="metodoPago"]:checked')?.value;
-        if (!metodo) throw new Error('Selecciona Efectivo o Tarjeta/Transferencia.');
         const next = getState();
         if (!next.caja.abierta || next.caja.turnoId !== pendingPayment.turnoId) throw new Error('El turno cambió. Cancela este cobro y vuelve a abrirlo.');
         const current = pendiente(pendingPayment.pedidoId, pendingPayment.partidaId);
         if (current.montoCentavos !== pendingPayment.montoCentavos || JSON.stringify(current.partidas.map(p => p.id)) !== JSON.stringify(pendingPayment.partidaIds)) {
           mostrarPago();
-          throw new Error('Los pagos del pedido cambiaron. Revisa el importe y selecciona nuevamente el método.');
+          throw new Error('Los pagos del pedido cambiaron. Revisa el total e ingresa nuevamente los montos.');
         }
+        const pago = actualizarValidacionPago();
+        if (!pago || !pago.completo) throw new Error($('cash-payment-status').textContent);
         const index = next.pedidos.findIndex(p => p.id === pendingPayment.pedidoId);
-        const cobro = AmorCash.cobrarPartidas(next.pedidos[index], pendingPayment.partidaId, next.caja, metodo);
+        const cobro = AmorCash.cobrarPartidas(next.pedidos[index], pendingPayment.partidaId, next.caja, { efectivoRecibido: $('cash-payment-cash').value, montoTarjeta: $('cash-payment-card').value });
         next.pedidos[index] = cobro.pedido; next.caja = cobro.caja;
         if (!commit(next)) throw new Error('No se guardó el cobro. El pedido sigue pendiente.');
         pendingPayment = null; $('cash-payment-dialog').close();
-        notify(`Cobro registrado: ${moneda(cobro.montoCentavos)} en ${metodo === 'efectivo' ? 'efectivo' : 'tarjeta/transferencia'}`);
+        notify(`Cobro registrado: ${moneda(cobro.montoCentavos)}${pago.cambioCentavos > 0 ? ` · Cambio a entregar: ${moneda(pago.cambioCentavos)}` : ''}`);
       } catch (error) { mostrarError('cash-payment-error', error.message); }
     });
     $('cash-expense-button').addEventListener('click', () => {
@@ -173,7 +201,7 @@ globalThis.AmorCashUI = (() => {
       try {
         const next = getState();
         if (next.caja.turnoId !== closeShiftId) throw new Error('El turno cambió. Vuelve a abrir su corte.');
-        const cierre = AmorCash.cerrarCaja(next.caja);
+        const cierre = AmorCash.cerrarCaja(next.caja, undefined, next.pedidos);
         next.historialCortes.push(cierre.corte); next.caja = cierre.caja;
         if (!commit(next)) throw new Error('No se guardó el corte. La caja sigue abierta.');
         $('cash-close-dialog').close(); notify('Turno cerrado y corte guardado');

@@ -39,6 +39,7 @@ globalThis.AmorStorage = (() => {
       if (pedido.totalCentavos !== total) throw new Error('Total inconsistente en el expediente.');
       pedido.estado = AmorOrders.estadoPedido(pedido);
     }
+    state.pedidos = state.pedidos.map(AmorCash.normalizarPedidoPagos);
     for (const partida of state.borrador.partidas) validarPartida(partida);
     if (typeof state.borrador.etiqueta !== 'string' || state.borrador.etiqueta.length > 60) throw new Error('Etiqueta de borrador inválida.');
     state.siguienteNumero = Math.max(1, ...numeros) + (numeros.size ? 1 : 0);

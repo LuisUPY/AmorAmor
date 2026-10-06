@@ -32,6 +32,12 @@ globalThis.AmorSalesUI = (() => {
   function resumenOpciones(partida) {
     return partida.selecciones.map(s => s.texto ? `${s.grupoNombre}: ${s.texto}` : `${s.grupoNombre}: ${s.valores.map(v => v.nombre).join(', ')}`).join(' · ');
   }
+  function resumenPago(partida) {
+    if (Number.isFinite(partida.montoEfectivo) && Number.isFinite(partida.montoTarjeta)) {
+      return `Efectivo ${dinero(partida.montoEfectivo)} · Tarjeta/Transferencia ${dinero(partida.montoTarjeta)}`;
+    }
+    return `Método: ${partida.metodoPago === 'efectivo' ? 'Efectivo' : partida.metodoPago === 'tarjeta' ? 'Tarjeta/Transferencia' : 'Sin registrar (pago anterior)'}`;
+  }
   function iniciar({ getState, commit, notify, reload, solicitarCobro }) {
     let selectedDay = null;
     let selectedLoadDay = null;
@@ -49,7 +55,7 @@ globalThis.AmorSalesUI = (() => {
       if (options) content.append(node('p', 'line-options', options));
       if (partida.nota) content.append(node('p', 'line-note', `Nota: ${partida.nota}`));
       content.append(estados(partida));
-      if (partida.pagado) content.append(node('p', 'line-options', `Método: ${partida.metodoPago === 'efectivo' ? 'Efectivo' : partida.metodoPago === 'tarjeta' ? 'Tarjeta/Transferencia' : 'Sin registrar (pago anterior)'}`));
+      if (partida.pagado) content.append(node('p', 'line-options', resumenPago(partida)));
       if (pedido) {
         const actions = node('div', 'line-state-actions');
         const prepare = button(partida.preparado ? 'Preparado ✓' : 'Marcar PREPARADO', 'secondary-button', () => cambiarEstado(pedido.id, partida.id, 'preparado'));
