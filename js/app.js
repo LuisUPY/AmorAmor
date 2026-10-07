@@ -2,7 +2,7 @@
   'use strict';
   const { catalogo, dinero, centavos, buscar, crearPartida, crearExtra, totalPedido } = AmorPOS;
   const $ = id => document.getElementById(id);
-  const state = { macro: 'Alimentos', subcategoria: 'todos', busqueda: '', partidas: [], producto: null };
+  const state = { macro: 'Alimentos', subcategoria: 'todos', busqueda: '', partidas: [], producto: null, preajuste: '', pedidoDestinoId: null };
   let expediente;
   let storageError = '';
   let salesUI = null;
@@ -48,16 +48,46 @@
   function saveDraft() {
     return commit(currentState());
   }
+  function etiquetaActual() {
+    return state.preajuste ? state.preajuste + ($('order-label').value ? ` · ${$('order-label').value}` : '') : $('order-label').value;
+  }
+  function restaurarEtiqueta(etiqueta) {
+    const match = etiqueta.match(/^(Mesa [1-8]|Delivery)(?: · (.*))?$/s);
+    state.preajuste = match ? match[1] : '';
+    $('order-label').value = match ? match[2] || '' : etiqueta;
+    actualizarPreajustes();
+  }
+  function actualizarPreajustes() {
+    for (const preset of $('order-label-presets').children) preset.setAttribute('aria-pressed', String(preset.dataset.etiqueta === state.preajuste));
+    $('order-label').maxLength = state.preajuste ? 60 - state.preajuste.length - 3 : 60;
+  }
+  function renderPreajustes() {
+    $('order-label-presets').replaceChildren(...[...Array.from({ length: 8 }, (_, i) => `Mesa ${i + 1}`), 'Delivery', ''].map(etiqueta => {
+      const preset = button(etiqueta || 'Personalizado', 'label-preset', () => {
+        state.preajuste = etiqueta;
+        actualizarPreajustes();
+        $('order-label').value = $('order-label').value.slice(0, $('order-label').maxLength);
+        saveDraft();
+      });
+      preset.dataset.etiqueta = etiqueta;
+      return preset;
+    }));
+    actualizarPreajustes();
+  }
   function currentState() {
-    return JSON.parse(JSON.stringify({ ...expediente, borrador: { etiqueta: $('order-label').value, partidas: state.partidas } }));
+    const next = JSON.parse(JSON.stringify(expediente));
+    if (state.pedidoDestinoId) next.adicion = { pedidoId: state.pedidoDestinoId, partidas: state.partidas };
+    else next.borrador = { etiqueta: etiquetaActual(), partidas: state.partidas };
+    return JSON.parse(JSON.stringify(next));
   }
   function commit(next) {
     try {
       if (storageError) throw new Error(storageError);
       const saved = AmorStorage.guardarExpediente(next);
       expediente = saved;
-      state.partidas = saved.borrador.partidas;
-      if ($('order-label').value !== saved.borrador.etiqueta) $('order-label').value = saved.borrador.etiqueta;
+      state.pedidoDestinoId = saved.adicion?.pedidoId || null;
+      state.partidas = saved.adicion ? saved.adicion.partidas : saved.borrador.partidas;
+      if (etiquetaActual() !== saved.borrador.etiqueta) restaurarEtiqueta(saved.borrador.etiqueta);
       $('storage-status').textContent = 'Expediente guardado en este navegador';
       renderOrder(); salesUI?.renderAll(); cashUI?.renderAll();
       return true;
@@ -77,8 +107,9 @@
   }
   function restoreDraft() {
       state.partidas = [];
+      state.pedidoDestinoId = expediente.adicion?.pedidoId || null;
       let descartadas = 0;
-      for (const stored of expediente.borrador.partidas) {
+      for (const stored of (expediente.adicion || expediente.borrador).partidas) {
         try {
           const partida = stored.tipo === 'extra' ? crearExtra(stored.nombre, stored.precioUnitarioCentavos / 100) : crearPartida(stored.productoId, stored.opciones, stored.nota);
           const previa = state.partidas.find(item => item.clave === partida.clave);
@@ -86,7 +117,7 @@
           else state.partidas.push({ ...partida, cantidad: stored.cantidad });
         } catch { descartadas++; }
       }
-      $('order-label').value = expediente.borrador.etiqueta;
+      restaurarEtiqueta(expediente.borrador.etiqueta);
       if (descartadas) notify('Se omitieron partidas del borrador que ya no son válidas.');
       if (storageError) {
         $('storage-status').textContent = 'No se pudo leer el expediente local';
@@ -300,6 +331,13 @@
     renderOrder(); saveDraft();
   }
   function renderOrder() {
+    const destino = expediente.pedidos.find(pedido => pedido.id === state.pedidoDestinoId);
+    $('order-title').textContent = destino ? `Añadir a ${destino.etiqueta || `pedido N° ${destino.numero}`}` : 'Pedido actual';
+    $('order-label-controls').hidden = !!destino;
+    $('addition-notice').hidden = !destino;
+    $('addition-note').textContent = destino ? `Pedido N° ${destino.numero} · Selecciona los productos nuevos en el menú. Se sumarán al confirmar.` : '';
+    $('review-order').textContent = destino ? 'Revisar productos nuevos →' : 'Crear pedido →';
+    $('order-total-label').textContent = destino ? 'Total a añadir' : 'Total';
     const cantidad = state.partidas.reduce((total, line) => total + line.cantidad, 0);
     const total = dinero(totalPedido(state.partidas) / 100);
     $('order-count').textContent = cantidad;
@@ -315,7 +353,7 @@
       const empty = element('div', 'order-empty');
       const picture = element('div', 'empty-icon');
       picture.append(icon('bag'));
-      empty.append(picture, element('strong', '', 'Tu pedido empieza con un antojo'), element('p', '', 'Toca el + de cualquier producto\ny lo agregaremos aquí.'));
+      empty.append(picture, element('strong', '', destino ? '¿Algo más para este pedido?' : 'Tu pedido empieza con un antojo'), element('p', '', 'Toca el + de cualquier producto\ny lo agregaremos aquí.'));
       $('order-items').replaceChildren(empty);
     }
   }
@@ -357,11 +395,40 @@
   });
   $('clear-order').addEventListener('click', () => $('clear-dialog').showModal());
   $('confirm-clear').addEventListener('click', () => {
-    const next = currentState(); next.borrador = { etiqueta: '', partidas: [] };
+    const next = currentState();
+    if (state.pedidoDestinoId) next.adicion.partidas = [];
+    else next.borrador = { etiqueta: '', partidas: [] };
     if (commit(next)) { $('clear-dialog').close(); notify('Pedido vaciado'); }
   });
+  function comenzarAdicion(pedidoId) {
+    const next = currentState();
+    const pedido = next.pedidos.find(p => p.id === pedidoId);
+    if (!pedido || !AmorOrders.estaAbierto(pedido)) { notify('Este pedido ya está cerrado.'); return; }
+    if (next.adicion && next.adicion.pedidoId !== pedidoId) { notify('Confirma o cancela primero los productos del otro pedido.'); return; }
+    if (!next.adicion) next.adicion = { pedidoId, partidas: [] };
+    if (!commit(next)) return;
+    $('ticket-dialog').close();
+    $('history-dialog').close();
+    $('order-panel').scrollIntoView({ behavior: 'auto', block: 'start' });
+    $('order-title').focus({ preventScroll: true });
+    notify(`Selecciona productos para ${pedido.etiqueta || `pedido N° ${pedido.numero}`}`);
+  }
+  function cancelarAdicion() {
+    const next = currentState(); next.adicion = null;
+    if (commit(next)) { $('cancel-addition-dialog').close(); notify('Selección cancelada'); }
+  }
+  $('cancel-addition').addEventListener('click', () => {
+    if (state.partidas.length) $('cancel-addition-dialog').showModal();
+    else cancelarAdicion();
+  });
+  $('confirm-cancel-addition').addEventListener('click', cancelarAdicion);
   $('review-order').addEventListener('click', () => {
-    $('review-label').textContent = $('order-label').value.trim() || 'Pedido sin etiqueta';
+    const destino = expediente.pedidos.find(p => p.id === state.pedidoDestinoId);
+    $('review-title').textContent = destino ? 'Revisa los productos nuevos' : 'Revisa tu pedido';
+    $('review-label').textContent = destino ? `${destino.etiqueta || 'Sin etiqueta'} · Pedido N° ${destino.numero}` : etiquetaActual().trim() || 'Pedido sin etiqueta';
+    $('review-total-label').textContent = destino ? 'Total a añadir' : 'Total del pedido';
+    $('review-print-note').textContent = destino ? 'Se sumarán al pedido y se imprimirán comandas solo de estos productos nuevos.' : 'Se guardará en este dispositivo y se abrirá la impresión de comandas para Cocina y Barra.';
+    $('confirm-order').textContent = destino ? 'Confirmar adición ✓' : 'Confirmar pedido ✓';
     $('review-items').replaceChildren(...state.partidas.map(line => lineMarkup(line, false)));
     $('review-total').textContent = dinero(totalPedido(state.partidas) / 100);
     $('review-dialog').showModal();
@@ -369,7 +436,22 @@
   $('confirm-order').addEventListener('click', () => {
     try {
       const next = currentState();
-      const pedido = AmorOrders.nuevoPedido(state.partidas, $('order-label').value, next.siguienteNumero);
+      if (state.pedidoDestinoId) {
+        const index = next.pedidos.findIndex(p => p.id === state.pedidoDestinoId);
+        if (index < 0) throw new Error('No se encontró el pedido.');
+        const anterior = next.pedidos[index];
+        const pedido = AmorOrders.agregarPartidas(anterior, state.partidas);
+        const nuevas = pedido.partidas.slice(anterior.partidas.length);
+        next.pedidos[index] = pedido;
+        next.adicion = null;
+        if (commit(next)) {
+          $('review-dialog').close(); salesUI.abrirPedido(pedido.id);
+          notify(`Productos añadidos a ${pedido.etiqueta || `pedido N° ${pedido.numero}`}`);
+          AmorPrinting.imprimirComandas({ ...pedido, partidas: nuevas }).catch(error => notify(`Productos guardados. No se abrió la impresión: ${error.message}`));
+        }
+        return;
+      }
+      const pedido = AmorOrders.nuevoPedido(state.partidas, etiquetaActual(), next.siguienteNumero);
       next.pedidos.push(pedido); next.siguienteNumero++;
       next.borrador = { etiqueta: '', partidas: [] };
       if (commit(next)) {
@@ -384,8 +466,20 @@
     return saved;
   };
   $('save-expediente').addEventListener('click', globalThis.guardarExpediente);
+  $('restart-app').addEventListener('click', () => { if (saveDraft()) window.location.reload(); });
+  const menus = [...document.querySelectorAll('.options-dropdown')];
+  for (const menu of menus) {
+    menu.addEventListener('toggle', () => { if (menu.open) for (const other of menus) if (other !== menu) other.open = false; });
+    menu.querySelector('nav').addEventListener('click', event => { if (event.target.closest('button:not(:disabled), a')) menu.open = false; });
+  }
+  document.addEventListener('click', event => { for (const menu of menus) if (!menu.contains(event.target)) menu.open = false; });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape') for (const menu of menus) if (menu.open) { menu.open = false; menu.querySelector('summary').focus(); }
+  });
+  renderPreajustes();
   cashUI = AmorCashUI.iniciar({ getState: currentState, commit, notify });
   salesUI = AmorSalesUI.iniciar({ getState: currentState, commit, notify, reload: reloadExpediente,
+    agregarProductos: comenzarAdicion,
     solicitarCobro: (pedidoId, partidaId) => cashUI.solicitarCobro(pedidoId, partidaId) });
   window.addEventListener('storage', event => {
     if (event.key !== AmorStorage.KEY) return;

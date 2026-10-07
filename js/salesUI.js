@@ -38,7 +38,7 @@ globalThis.AmorSalesUI = (() => {
     }
     return `Método: ${partida.metodoPago === 'efectivo' ? 'Efectivo' : partida.metodoPago === 'tarjeta' ? 'Tarjeta/Transferencia' : 'Sin registrar (pago anterior)'}`;
   }
-  function iniciar({ getState, commit, notify, reload, solicitarCobro }) {
+  function iniciar({ getState, commit, notify, reload, solicitarCobro, agregarProductos }) {
     let selectedDay = null;
     let selectedLoadDay = null;
     let activeOrderId = null;
@@ -82,12 +82,15 @@ globalThis.AmorSalesUI = (() => {
     function renderTicket() {
       const pedido = getState().pedidos.find(p => p.id === activeOrderId);
       if (!pedido) return;
-      $('ticket-title').textContent = `Pedido N° ${pedido.numero}`;
-      $('ticket-meta').textContent = `${pedido.etiqueta || 'Sin etiqueta'} · ${horario.format(new Date(pedido.creadoEn))}`;
+      $('ticket-title').textContent = pedido.etiqueta || `Pedido N° ${pedido.numero}`;
+      $('ticket-meta').textContent = `Pedido N° ${pedido.numero} · ${horario.format(new Date(pedido.creadoEn))}`;
       $('ticket-lines').replaceChildren(...pedido.partidas.map(partida => linea(partida, pedido)));
       $('ticket-total').textContent = dinero(pedido.totalCentavos / 100);
       $('prepare-all').disabled = pedido.partidas.every(partida => partida.preparado);
       $('pay-all').disabled = pedido.partidas.every(partida => partida.pagado);
+      $('add-to-order').disabled = !AmorOrders.estaAbierto(pedido);
+      const pagado = pedido.partidas.filter(p => p.pagado).reduce((total, p) => total + p.precioUnitarioCentavos * p.cantidad, 0);
+      $('ticket-balance').textContent = `Abonado ${dinero(pagado / 100)} · Pendiente ${dinero((pedido.totalCentavos - pagado) / 100)}`;
     }
     function renderQueue() {
       const state = getState();
@@ -114,8 +117,8 @@ globalThis.AmorSalesUI = (() => {
         if (visible.length < pedido.partidas.length) preview.append(node('span', 'queue-more', `+${pedido.partidas.length - visible.length}`));
         const data = node('span', 'queue-data');
         const title = node('span', 'queue-ticket-title');
-        title.append(node('strong', '', `N° ${pedido.numero}`), node('span', 'status-badge open', 'ABIERTO'));
-        data.append(title, node('span', 'queue-label', pedido.etiqueta || 'Sin etiqueta'), node('strong', 'queue-price', dinero(pedido.totalCentavos / 100)));
+        title.append(node('span', 'queue-number', `N° ${pedido.numero}`), node('span', 'status-badge open', 'ABIERTO'));
+        data.append(node('strong', 'queue-label', pedido.etiqueta || 'Sin etiqueta'), title, node('strong', 'queue-price', dinero(pedido.totalCentavos / 100)));
         card.append(preview, data); return card;
       }));
       if (!abiertos.length) $('open-orders-list').append(node('p', 'queue-empty', 'Los pedidos confirmados aparecerán aquí.'));
@@ -208,6 +211,11 @@ globalThis.AmorSalesUI = (() => {
       if (!pedido) return;
       AmorPrinting.imprimirComandas(pedido).catch(error => notify(`No se abrió la impresión: ${error.message}`));
     });
+    $('print-bill').addEventListener('click', () => {
+      const pedido = getState().pedidos.find(p => p.id === activeOrderId);
+      if (pedido) AmorPrinting.imprimirCuenta(pedido).catch(error => notify(`No se abrió la impresión: ${error.message}`));
+    });
+    $('add-to-order').addEventListener('click', () => agregarProductos(activeOrderId));
     $('toggle-queue').addEventListener('click', () => {
       const next = getState(); next.colaOculta = !next.colaOculta;
       commit(next);

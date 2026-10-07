@@ -43,6 +43,10 @@ async function main() {
       };
     }, { key: core.AmorStorage.KEY, state: seed });
     const page = await context.newPage();
+    const cashOption = async id => {
+      await page.locator('#cash-options > summary').click();
+      await page.locator(id).click();
+    };
     const errors = [];
     page.on('pageerror', error => errors.push(error.message));
     await page.clock.setFixedTime(new Date('2026-10-06T16:00:00Z'));
@@ -204,7 +208,7 @@ async function main() {
     assert.equal(fullyPaid.pedidos[0].montoTarjeta, 352.35);
     await page.locator('#ticket-dialog [data-close]').click();
 
-    await page.locator('#cash-expense-button').click();
+    await cashOption('#cash-expense-button');
     await page.locator('#cash-expense-amount').fill('25.35');
     await page.locator('#cash-expense-concept').fill('Compra de hielo');
     const beforeExpenseFailure = await snapshot();
@@ -215,7 +219,7 @@ async function main() {
     await restoreWrites();
     await page.locator('#cash-expense-form button[type="submit"]').click();
     assert.equal((await snapshot()).caja.gastosDelDia.length, 1);
-    await page.locator('#cash-close-button').click();
+    await cashOption('#cash-close-button');
     const expected = {
       fondoInicialCentavos: '$0.00', ventasEfectivoCentavos: '$310.00', gastosExtrasCentavos: '$25.35',
       efectivoEsperadoCentavos: '$284.65', ventasTarjetaCentavos: '$352.35', totalVentasCentavos: '$662.35'
@@ -254,7 +258,7 @@ async function main() {
     await page.reload(); await page.waitForSelector('.product-card');
     await page.locator('#cash-open-dialog [data-close]').click();
     assert.equal((await snapshot()).historialCortes.length, 1);
-    await page.locator('#cash-history-button').click();
+    await cashOption('#cash-history-button');
     assert.match(await page.locator('#cash-history-dialog').textContent(), /284\.65/);
     assert.match(await page.locator('#cash-history-dialog').textContent(), /Compra de hielo/);
     await page.locator('#cash-history-dialog [data-close]').click();
@@ -282,7 +286,7 @@ async function main() {
     assert.equal(reopened.pedidos[1].montoTarjeta, 0);
     assert.equal(reopened.caja.pagos[0].montoEfectivoCentavos, 35000);
     await page.locator('#ticket-dialog [data-close]').click();
-    await page.locator('#cash-close-button').click();
+    await cashOption('#cash-close-button');
     assert.equal(await page.locator('#cash-summary [data-value="efectivoEsperadoCentavos"]').textContent(), '$650.10');
 
     for (const width of [390, 320]) {
@@ -290,6 +294,142 @@ async function main() {
       assert.equal(await page.locator('#cash-close-dialog').evaluate(n => n.scrollWidth <= n.clientWidth), true, `Corte a ${width}px`);
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Página a ${width}px`);
     }
+    await page.locator('#cash-close-dialog [data-close]').click();
+    await page.setViewportSize({ width: 1440, height: 1000 });
+
+    // Etiquetas rápidas y detalles se guardan juntos; los menús se cierran con Escape.
+    const preset = label => page.locator('#order-label-presets').getByRole('button', { name: label, exact: true });
+    assert.equal(await page.locator('#order-label-presets button').count(), 10);
+    for (let table = 1; table <= 8; table++) {
+      await preset(`Mesa ${table}`).click();
+      assert.equal((await snapshot()).borrador.etiqueta, `Mesa ${table}`);
+    }
+    await preset('Mesa 3').click();
+    await page.locator('#order-label').fill('Ana');
+    await page.locator('#product-search').fill('pan tostado');
+    await page.getByRole('button', { name: 'Agregar Orden de pan tostado', exact: true }).click();
+    await page.locator('#review-order').click();
+    assert.equal(await page.locator('#review-label').textContent(), 'Mesa 3 · Ana');
+    await page.locator('#confirm-order').click();
+    const labeled = page.locator('[data-pedido="pedido-3"]');
+    assert.equal(await labeled.locator('.queue-label').textContent(), 'Mesa 3 · Ana');
+    assert.ok(await labeled.evaluate(n => parseFloat(getComputedStyle(n.querySelector('.queue-label')).fontSize) > parseFloat(getComputedStyle(n.querySelector('.queue-number')).fontSize)));
+    await labeled.click();
+    await page.locator('#pay-all').click();
+    await submitPayment('60', '0');
+    const paidBeforeAddition = (await snapshot()).pedidos[2];
+    await page.locator('#ticket-dialog [data-close]').click();
+
+    // El borrador de un próximo pedido permanece intacto al añadir al existente.
+    await preset('Delivery').click();
+    await page.locator('#order-label').fill('Luis');
+    await page.locator('#add-extra').click();
+    await page.locator('#extra-concept').fill('Próximo pedido');
+    await page.locator('#extra-amount').fill('7.35');
+    await page.locator('#extra-form button[type="submit"]').click();
+    const preservedDraft = (await snapshot()).borrador;
+    await labeled.click();
+    assert.equal(await page.locator('#ticket-title').textContent(), 'Mesa 3 · Ana');
+    await page.locator('#add-to-order').click();
+    assert.equal(await page.locator('#order-label-controls').isVisible(), false);
+    assert.match(await page.locator('#order-title').textContent(), /Mesa 3 · Ana/);
+    await page.getByRole('button', { name: 'Agregar Orden de pan tostado', exact: true }).click();
+    await page.reload(); await page.waitForSelector('.product-card');
+    assert.equal(await page.locator('#order-total').textContent(), '$60.00');
+    assert.deepEqual((await snapshot()).borrador, preservedDraft);
+    assert.equal((await snapshot()).adicion.pedidoId, 'pedido-3');
+    await page.locator('#add-extra').click();
+    await page.locator('#extra-concept').fill('Postre adicional');
+    await page.locator('#extra-amount').fill('9.25');
+    await page.locator('#extra-form button[type="submit"]').click();
+    await page.locator('#review-order').click();
+    assert.equal(await page.locator('#review-total').textContent(), '$69.25');
+    const beforeAdditionFailure = await snapshot();
+    await failWrites();
+    await page.locator('#confirm-order').click();
+    assert.deepEqual(await snapshot(), beforeAdditionFailure);
+    assert.equal(await page.locator('#review-dialog').isVisible(), true);
+    await restoreWrites();
+    await page.locator('#confirm-order').click();
+    const added = await snapshot();
+    assert.equal(added.pedidos.length, 3);
+    assert.equal(added.siguienteNumero, 4);
+    assert.equal(added.pedidos[2].totalCentavos, 12925);
+    assert.deepEqual(added.pedidos[2].partidas[0], paidBeforeAddition.partidas[0]);
+    assert.equal(added.pedidos[2].partidas.length, 3);
+    assert.ok(added.pedidos[2].partidas.slice(1).every(p => !p.pagado && !p.preparado));
+    assert.deepEqual(added.borrador, preservedDraft);
+    assert.equal(added.adicion, null);
+    assert.equal(await page.locator('#order-total').textContent(), '$7.35');
+    assert.equal(await preset('Delivery').getAttribute('aria-pressed'), 'true');
+    assert.equal(await page.locator('#order-label').inputValue(), 'Luis');
+    await page.waitForFunction(() => window.printedTickets.length === 1 && document.getElementById('zona-impresion').childElementCount === 0);
+    assert.match(await page.evaluate(() => window.printedTickets[0].text), /Postre adicional/);
+    assert.equal(await page.evaluate(() => (window.printedTickets[0].text.match(/1 x Orden de pan tostado/g) || []).length), 1, 'Imprime únicamente las partidas nuevas');
+
+    // La cuenta imprime todo el pedido y muestra el abono anterior, sin registrar otro cobro.
+    await page.evaluate(() => { window.holdPrint = true; });
+    await page.locator('#print-bill').click();
+    await page.waitForFunction(() => window.printedTickets.length === 2);
+    const bill = await page.evaluate(() => window.printedTickets[1]);
+    assert.deepEqual(bill.areas.map(area => area.area), ['CUENTA']);
+    assert.match(bill.text, /Mesa 3 · Ana/);
+    assert.match(bill.text, /TOTAL\$129\.25Abonado\$60\.00Pendiente de pago\$69\.25/);
+    assert.deepEqual(await snapshot(), added);
+    await page.emulateMedia({ media: 'print' });
+    assert.equal(await page.locator('#zona-impresion').evaluate(n => n.scrollWidth <= n.clientWidth), true);
+    await page.screenshot({ path: path.join(output, 'cuenta-detallada.png') });
+    await page.evaluate(() => window.dispatchEvent(new Event('afterprint')));
+    await page.emulateMedia({ media: 'screen' });
+    await page.evaluate(() => { window.holdPrint = false; });
+    await page.screenshot({ path: path.join(output, 'pedido-ampliado.png') });
+    await page.locator('#pay-all').click();
+    await submitPayment('0', '69.25');
+    assert.equal((await snapshot()).pedidos[2].montoEfectivo, 60);
+    assert.equal((await snapshot()).pedidos[2].montoTarjeta, 69.25);
+    await page.locator('#prepare-all').click();
+    assert.equal(await page.locator('#add-to-order').isDisabled(), true);
+    await page.locator('#ticket-dialog [data-close]').click();
+
+    // Cancelar una adición conserva el ticket y el borrador independiente.
+    await page.locator('[data-pedido="pedido-2"]').click();
+    await page.locator('#add-to-order').click();
+    await page.locator('#add-extra').click();
+    await page.locator('#extra-concept').fill('Por cancelar');
+    await page.locator('#extra-amount').fill('1');
+    await page.locator('#extra-form button[type="submit"]').click();
+    await page.locator('#cancel-addition').click();
+    await page.locator('#confirm-cancel-addition').click();
+    assert.deepEqual((await snapshot()).borrador, preservedDraft);
+    assert.equal((await snapshot()).pedidos[1].totalCentavos, 35000);
+    assert.equal((await snapshot()).adicion, null);
+    await preset('Personalizado').click();
+    assert.equal((await snapshot()).borrador.etiqueta, 'Luis');
+    await preset('Delivery').click();
+
+    for (const width of [1440, 820, 390, 320]) {
+      await page.setViewportSize({ width, height: width > 700 ? 1000 : 844 });
+      await page.evaluate(() => window.scrollTo(0, 0));
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      await page.locator('#app-options > summary').click();
+      assert.equal(await page.locator('#history-button').isVisible(), true);
+      assert.equal(await page.locator('#app-options .options-panel').evaluate(n => n.getBoundingClientRect().left >= 0 && n.getBoundingClientRect().right <= innerWidth), true);
+      await page.keyboard.press('Escape');
+      assert.equal(await page.locator('#app-options').evaluate(n => n.open), false);
+      await page.locator('#cash-options > summary').click();
+      assert.equal(await page.locator('#cash-options .options-panel').evaluate(n => n.getBoundingClientRect().left >= 0 && n.getBoundingClientRect().right <= innerWidth), true);
+      await page.screenshot({ path: path.join(output, `opciones-caja-${width}.png`) });
+      await page.locator('.topbar').click({ position: { x: 3, y: 3 } });
+      assert.equal(await page.locator('#cash-options').evaluate(n => n.open), false);
+    }
+    const beforeRestart = await snapshot();
+    await page.locator('#app-options > summary').click();
+    await page.locator('#restart-app').click();
+    await page.waitForSelector('.product-card');
+    assert.deepEqual((await snapshot()).pedidos, beforeRestart.pedidos);
+    assert.deepEqual((await snapshot()).caja, beforeRestart.caja);
+    assert.deepEqual((await snapshot()).borrador, beforeRestart.borrador);
+    assert.equal(await preset('Delivery').getAttribute('aria-pressed'), 'true');
     assert.deepEqual(errors, []);
     await context.close();
     console.log('✓ Caja: pagos mixtos, cambio neto, validación dinámica, corte e historial; fallos atómicos; comandas y CSS térmico.');

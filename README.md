@@ -21,7 +21,9 @@ La búsqueda actúa sobre **todo el catálogo** mientras hay texto, aunque la pe
 
 ## 2. HTML y modales
 
-`index.html` contiene los diálogos Extras, Historial, Cargar Expediente, revisión y seguimiento de pedidos, además de Apertura de Caja, Cobrar pedido, Registrar Gasto Extra, Corte de Caja y Cortes guardados. El modal de cobro muestra el **Total a Pagar** y dos entradas numéricas: **Monto recibido en Efectivo** y **Monto en Tarjeta/Transferencia**, ambas inicialmente en cero. La barra de caja muestra el estado del turno y su efectivo esperado. `#zona-impresion` es un hijo directo de `body`, oculto en pantalla.
+`index.html` contiene los diálogos Extras, Historial, Cargar Expediente, revisión y seguimiento de pedidos, además de Apertura de Caja, Cobrar pedido, Registrar Gasto Extra, Corte de Caja y Cortes guardados. El modal de cobro muestra el **Total a Pagar** y dos entradas numéricas: **Monto recibido en Efectivo** y **Monto en Tarjeta/Transferencia**, ambas inicialmente en cero. La cabecera muestra el estado de la caja y su efectivo esperado, junto a **Ver opciones de caja** (apertura, gasto, corte y cortes guardados). **Opciones** agrupa Menú, Historial, Cargar/Guardar expediente y **Reiniciar aplicación**; reiniciar guarda la selección actual y recarga conservando pedidos, caja y expediente. Los menús se cierran al elegir una acción, pulsar Escape o tocar fuera. `#zona-impresion` es un hijo directo de `body`, oculto en pantalla.
+
+La etiqueta ofrece **Mesa 1–8**, **Delivery** y **Personalizado**, seguida de un campo libre para detalles. Se guarda como una sola etiqueta (por ejemplo, `Mesa 3 · Ana`); los pedidos anteriores conservan sus etiquetas. La etiqueta ocupa el primer nivel visual en la cola y el título del seguimiento; el número se muestra como referencia secundaria.
 
 **Añadir Extra** solicita únicamente Concepto y Monto. Acepta punto o coma decimal, requiere un importe positivo de hasta dos decimales y agrega el ítem al mismo carrito. Puede modificarse su cantidad o quitarse como cualquier producto. No se inventa una macro para estos ítems.
 
@@ -38,11 +40,11 @@ El historial tiene lista de días a la izquierda y corte a la derecha, con scrol
 Los scripts se cargan en este orden: `menuData`, `orderCore`, `orders`, `history`, `cash`, `storage`, `media`, `salesUI`, `cashUI`, `printing`, `app`.
 
 - `js/orderCore.js`: validación de modificadores, `crearPartida()`, `crearExtra()` y cálculo exacto en centavos.
-- `js/orders.js`: `nuevoPedido()`, estados de cada producto y `marcarPartida()` para registrar preparación o pago. Las acciones repetidas conservan la fecha original.
+- `js/orders.js`: `nuevoPedido()`, `agregarPartidas()`, estados de cada producto y `marcarPartida()` para registrar preparación o pago. Las acciones repetidas conservan la fecha original. Las adiciones crean partidas independientes con identificadores nuevos y estados pendientes, sin alterar las partidas previas.
 - `js/history.js`: `fechaLocal()`, `resumirDia()` y `agruparPorDia()` en la zona **America/Merida**.
 - `js/cash.js`: lógica pura de `AmorCash`, importes exactos en centavos y validación de vínculos entre cobros, partidas y turnos.
 - `js/cashUI.js`: apertura, `actualizarValidacionPago()` en cada edición de los montos, confirmación de pagos mixtos, gastos, desglose del corte e historial de cierres.
-- `js/printing.js`: `AmorPrinting.separarComandas(pedido)` y `imprimirComandas(pedido)`, también disponible como función global.
+- `js/printing.js`: `AmorPrinting.separarComandas(pedido)`, `imprimirComandas(pedido)` e `imprimirCuenta(pedido)`; las dos funciones de impresión también están disponibles globalmente.
 - `js/storage.js`: `cargarExpediente()` y `guardarExpediente(estado)` para leer y escribir localStorage, con validación y revisión del estado guardado.
 - `js/media.js`: mapa de imágenes representativas de las cinco macros y de extras personalizados.
 - `js/salesUI.js`: cola, seguimiento por producto, historial, KPIs y selección de días guardados.
@@ -57,6 +59,8 @@ Los scripts se cargan en este orden: `menuData`, `orderCore`, `orders`, `history
 5. **Historial** muestra las ventas por día. Solo cuentan las unidades pagadas en esa fecha; los pagos parciales se incluyen por producto. Un pedido cuyos productos se pagan en dos días aparece en ambos días, sin duplicar ventas. Las tarjetas muestran su total completo y el importe pagado en la fecha seleccionada. El **Corte de Caja** se calcula por turno, incluyendo turnos que cruzan medianoche.
 6. **Cargar Expediente** lee los días guardados en este navegador. Elegir uno abre su corte en el historial; conserva el borrador y la cola actuales. No abre el explorador del sistema.
 7. **Guardar expediente** guarda manualmente todos los pedidos, estados, numeración, preferencia de cola y borrador. Además se guarda tras cada cambio. No se descargan ni se importan archivos de ventas.
+8. **Añadir productos +** en un pedido abierto lleva al catálogo. Selecciona productos y extras, pulsa **Revisar productos nuevos** y **Confirmar adición**. Se actualiza el mismo pedido y se imprimen solo los productos añadidos. Sus estados empiezan pendientes; los pagos, fechas, precios y preparación anteriores se conservan. Esta selección se guarda por separado en `adicion`, sobrevive a una recarga y conserva el borrador del próximo pedido. **Cancelar** descarta la adición después de confirmar si hay productos seleccionados. Un ticket completamente preparado y pagado ya no admite adiciones.
+9. **Imprimir cuenta** en el seguimiento genera un único ticket para el cliente con etiqueta, número, fecha, cantidades, opciones, notas, precios unitarios, importes por producto, total, abonos y saldo pendiente. Incluye todos los productos del pedido y puede imprimirse antes o después de cobrar. Imprimir conserva los estados y pagos.
 
 Los KPIs muestran Entradas, Bebidas, Alimentos, Postres y Paquetes, contando cantidades. Un paquete cuenta como una unidad vendida. Los extras de preparación aumentan el importe del producto sin aumentar su conteo. Los extras personalizados sí cuentan como productos y se muestran con un conteo separado de unidades sin categoría; también se incluyen en ventas.
 
@@ -92,7 +96,7 @@ Las acciones de la interfaz guardan el pedido y la caja en la misma escritura de
 
 Los tickets incluyen número de pedido, mesa o nombre, fecha y hora de creación en Mérida, área, cantidades, selecciones guardadas y notas. El contenido se construye con `textContent`, de modo que nombres, conceptos y notas se imprimen como texto.
 
-`imprimirComandas(pedido)` genera únicamente las áreas con productos y llama `window.print()`. Devuelve una promesa; limpia el contenedor tras `afterprint` o cuando el navegador sale del modo de impresión. Impide impresiones simultáneas y también limpia si `window.print()` falla. Cancelar la impresión conserva el pedido confirmado y permite reimprimirlo.
+`imprimirComandas(pedido)` genera únicamente las áreas con productos y llama `window.print()`. `imprimirCuenta(pedido)` usa el mismo formato térmico y comprueba que el total coincide con sus partidas. Ambas devuelven una promesa y limpian el contenedor tras `afterprint` o cuando el navegador sale del modo de impresión. Impiden impresiones simultáneas y también limpian si `window.print()` falla. Cancelar la impresión conserva el pedido confirmado y permite reimprimirlo.
 
 El navegador abre su diálogo de impresión: selecciona papel de **80 mm**, escala **100 %** y desactiva cabeceras/pies del navegador. Ambas áreas se envían como páginas separadas en una sola llamada a la impresora seleccionada. Asignar automáticamente impresoras físicas diferentes o imprimir sin diálogo requiere integración adicional; `window.print()` no informa si salió el papel.
 

@@ -92,7 +92,42 @@
     return ticket;
   }
 
-  function imprimirComandas(pedido) {
+  function crearCuenta(pedido, fechaHora) {
+    const ticket = elemento('section', 'comanda-ticket cuenta-ticket');
+    ticket.dataset.area = 'CUENTA';
+    const cabecera = elemento('header', 'comanda-cabecera');
+    cabecera.append(elemento('h2', '', 'AMOR & AMOR'), elemento('h3', 'comanda-area', 'CUENTA'),
+      elemento('p', 'comanda-etiqueta', pedido.etiqueta || 'Sin etiqueta'),
+      elemento('p', '', `Pedido #${pedido.numero}`), elemento('p', '', fechaHora));
+    ticket.append(cabecera, elemento('p', 'cuenta-ayuda', 'Precios en MXN. Incluyen los extras seleccionados.'));
+    const lista = elemento('ul', 'comanda-lista');
+    for (const partida of pedido.partidas) {
+      const item = elemento('li', 'comanda-producto');
+      item.append(elemento('strong', '', `${partida.cantidad} x ${partida.nombre}`));
+      const opciones = textosOpciones(partida);
+      if (partida.nota) opciones.push(`Nota: ${partida.nota}`);
+      if (opciones.length) {
+        const detalles = elemento('ul', 'comanda-modificadores');
+        opciones.forEach(opcion => detalles.append(elemento('li', '', opcion)));
+        item.append(detalles);
+      }
+      const importes = elemento('div', 'cuenta-fila');
+      importes.append(elemento('span', '', `${AmorPOS.dinero(partida.precioUnitarioCentavos / 100)} c/u`),
+        elemento('strong', '', AmorPOS.dinero(partida.precioUnitarioCentavos * partida.cantidad / 100)));
+      item.append(importes); lista.append(item);
+    }
+    const pagado = pedido.partidas.filter(p => p.pagado).reduce((total, p) => total + p.precioUnitarioCentavos * p.cantidad, 0);
+    const totales = elemento('div', 'cuenta-totales');
+    for (const [etiqueta, monto, clase] of [['TOTAL', pedido.totalCentavos, 'cuenta-total'], ['Abonado', pagado, ''], ['Pendiente de pago', pedido.totalCentavos - pagado, 'cuenta-saldo']]) {
+      const fila = elemento('div', `cuenta-fila ${clase}`);
+      fila.append(elemento('span', '', etiqueta), elemento('strong', '', AmorPOS.dinero(monto / 100)));
+      totales.append(fila);
+    }
+    ticket.append(lista, totales, elemento('footer', 'comanda-pie', 'Gracias por compartir tu día con nosotros.'));
+    return ticket;
+  }
+
+  function imprimirPedido(pedido, tipo) {
     if (impresionActiva) return Promise.reject(new Error('Hay una impresión en curso. Cierra su diálogo antes de reimprimir.'));
     let zona;
     let copia;
@@ -107,6 +142,10 @@
       // el diálogo no debe cambiar sus cantidades ni sus modificadores.
       copia = JSON.parse(JSON.stringify(pedido));
       comandas = separarComandas(copia);
+      if (tipo === 'cuenta') {
+        const total = AmorPOS.totalPedido(copia.partidas);
+        if (copia.totalCentavos !== total) throw new Error('El total de la cuenta no coincide con sus productos.');
+      }
       const fecha = new Date(copia.creadoEn);
       if (!Number.isFinite(fecha.getTime())) throw new Error('La fecha del pedido no es válida.');
       fechaHora = new Intl.DateTimeFormat('es-MX', {
@@ -161,13 +200,18 @@
 
       try {
         zona.replaceChildren();
-        if (comandas.comandaAlimentos.length) {
-          zona.append(crearTicket(copia, 'COCINA', comandas.comandaAlimentos, fechaHora));
-          areas.push('COCINA');
-        }
-        if (comandas.comandaBebidas.length) {
-          zona.append(crearTicket(copia, 'BARRA', comandas.comandaBebidas, fechaHora));
-          areas.push('BARRA');
+        if (tipo === 'cuenta') {
+          zona.append(crearCuenta(copia, fechaHora));
+          areas.push('CUENTA');
+        } else {
+          if (comandas.comandaAlimentos.length) {
+            zona.append(crearTicket(copia, 'COCINA', comandas.comandaAlimentos, fechaHora));
+            areas.push('COCINA');
+          }
+          if (comandas.comandaBebidas.length) {
+            zona.append(crearTicket(copia, 'BARRA', comandas.comandaBebidas, fechaHora));
+            areas.push('BARRA');
+          }
         }
         document.body.classList.add('imprimiendo-comandas');
         window.addEventListener('afterprint', alTerminar);
@@ -186,6 +230,9 @@
     });
   }
 
-  globalThis.AmorPrinting = Object.freeze({ separarComandas, imprimirComandas });
+  const imprimirComandas = pedido => imprimirPedido(pedido, 'comandas');
+  const imprimirCuenta = pedido => imprimirPedido(pedido, 'cuenta');
+  globalThis.AmorPrinting = Object.freeze({ separarComandas, imprimirComandas, imprimirCuenta });
   globalThis.imprimirComandas = imprimirComandas;
+  globalThis.imprimirCuenta = imprimirCuenta;
 })();

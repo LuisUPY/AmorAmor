@@ -3,7 +3,7 @@ globalThis.AmorStorage = (() => {
   'use strict';
   const KEY = 'amor-amor-pos:expediente:v2';
   const LEGACY_KEY = 'amor-amor-pos:borrador:v1';
-  const vacio = () => ({ version: 2, revision: 0, siguienteNumero: 1, pedidos: [], borrador: { etiqueta: '', partidas: [] }, caja: AmorCash.cajaVacia(), historialCortes: [], colaOculta: false, guardadoEn: null });
+  const vacio = () => ({ version: 2, revision: 0, siguienteNumero: 1, pedidos: [], borrador: { etiqueta: '', partidas: [] }, adicion: null, caja: AmorCash.cajaVacia(), historialCortes: [], colaOculta: false, guardadoEn: null });
   const copia = value => JSON.parse(JSON.stringify(value));
   const fechaValida = valor => typeof valor === 'string' && Number.isFinite(Date.parse(valor));
   function validarPartida(partida) {
@@ -42,6 +42,11 @@ globalThis.AmorStorage = (() => {
     state.pedidos = state.pedidos.map(AmorCash.normalizarPedidoPagos);
     for (const partida of state.borrador.partidas) validarPartida(partida);
     if (typeof state.borrador.etiqueta !== 'string' || state.borrador.etiqueta.length > 60) throw new Error('Etiqueta de borrador inválida.');
+    if (state.adicion == null) state.adicion = null;
+    else {
+      if (!state.adicion || !state.pedidos.some(pedido => pedido.id === state.adicion.pedidoId) || !Array.isArray(state.adicion.partidas)) throw new Error('Selección para añadir inválida.');
+      for (const partida of state.adicion.partidas) validarPartida(partida);
+    }
     state.siguienteNumero = Math.max(1, ...numeros) + (numeros.size ? 1 : 0);
     if (Number.isSafeInteger(raw.siguienteNumero)) state.siguienteNumero = Math.max(state.siguienteNumero, raw.siguienteNumero);
     state.colaOculta = !!state.colaOculta;

@@ -24,19 +24,29 @@
 <body>
   <header class="topbar">
     <a class="brand" href="./" aria-label="Amor y Amor, inicio"><img src="assets/img/logo.png" alt="Amor & Amor Cafetería" width="180" height="72"></a>
-    <div class="topbar-title"><span class="status-dot" aria-hidden="true"></span><span>Punto de venta</span><span class="header-divider"></span><span class="muted">Cocina con amor</span></div>
-    <nav class="header-actions" aria-label="Ventas y expedientes"><button id="history-button" type="button">Historial</button><button id="load-expediente" type="button">Cargar expediente</button><button id="save-expediente" type="button">Guardar expediente</button><a class="menu-source" href="assets/Menu%20Amor%20%26%20Amor.pdf" target="_blank" rel="noopener">Menú ↗</a></nav>
-  </header>
-
-  <nav class="cash-toolbar" aria-label="Control de caja">
-    <p id="cash-status" role="status">Caja cerrada · Abre un turno para cobrar</p>
-    <div class="cash-toolbar-actions">
-      <button id="cash-open-button" type="button" class="secondary-button">Abrir caja</button>
-      <button id="cash-expense-button" type="button" class="secondary-button" disabled>Registrar Gasto Extra</button>
-      <button id="cash-close-button" type="button" class="secondary-button" disabled>Corte de Caja</button>
-      <button id="cash-history-button" type="button" class="text-button">Cortes guardados</button>
+    <div class="header-cash">
+      <p id="cash-status" role="status">Caja cerrada · Abre un turno para cobrar</p>
+      <details id="cash-options" class="options-dropdown">
+        <summary>Ver opciones de caja</summary>
+        <nav class="options-panel" aria-label="Control de caja">
+          <button id="cash-open-button" type="button">Abrir caja</button>
+          <button id="cash-expense-button" type="button" disabled>Registrar gasto extra</button>
+          <button id="cash-close-button" type="button" disabled>Corte de caja</button>
+          <button id="cash-history-button" type="button">Cortes guardados</button>
+        </nav>
+      </details>
     </div>
-  </nav>
+    <details id="app-options" class="options-dropdown app-options">
+      <summary>Opciones</summary>
+      <nav class="options-panel" aria-label="Opciones de la aplicación">
+        <a href="assets/Menu%20Amor%20%26%20Amor.pdf" target="_blank" rel="noopener">Menú ↗</a>
+        <button id="history-button" type="button">Historial</button>
+        <button id="load-expediente" type="button">Cargar expediente</button>
+        <button id="save-expediente" type="button">Guardar expediente</button>
+        <button id="restart-app" type="button">Reiniciar aplicación</button>
+      </nav>
+    </details>
+  </header>
 
   <main class="workspace">
     <section class="catalog" aria-labelledby="catalog-title">
@@ -60,9 +70,14 @@
 
     <aside id="order-panel" class="order-panel" aria-labelledby="order-title">
       <div class="order-heading"><div><p class="eyebrow">TU SELECCIÓN</p><h2 id="order-title" tabindex="-1">Pedido actual</h2></div><span id="order-count" class="count-badge">0</span></div>
-      <label class="order-label" for="order-label">Mesa o nombre <span class="muted">· opcional</span><input id="order-label" type="text" maxlength="60" placeholder="Ej. Mesa 03" autocomplete="off"></label>
+      <div id="order-label-controls" class="order-label-controls">
+        <p id="label-presets-title" class="label-presets-title">Etiqueta del pedido <span class="muted">· opcional</span></p>
+        <div id="order-label-presets" class="label-presets" role="group" aria-labelledby="label-presets-title"></div>
+        <label class="order-label" for="order-label">Detalle personalizado <span class="muted">· opcional</span><input id="order-label" type="text" maxlength="60" placeholder="Nombre, dirección o detalle adicional" autocomplete="off"></label>
+      </div>
+      <div id="addition-notice" class="addition-notice" hidden><p id="addition-note"></p><button id="cancel-addition" type="button" class="text-button">Cancelar</button></div>
       <div id="order-items" class="order-items" aria-label="Productos del pedido"></div>
-      <div class="order-bottom"><div class="draft-actions"><button id="add-extra" class="secondary-button" type="button">Añadir Extra +</button><button id="clear-order" class="text-button" type="button" disabled>Vaciar pedido</button></div><div class="order-total"><span>Total</span><strong id="order-total">$0.00</strong></div><p class="total-note">Incluye los extras seleccionados</p><button id="review-order" class="primary-button" type="button" disabled>Crear pedido <span aria-hidden="true">→</span></button><p class="local-note"><span class="status-dot" aria-hidden="true"></span><span id="storage-status">Expediente guardado en este navegador</span></p></div>
+      <div class="order-bottom"><div class="draft-actions"><button id="add-extra" class="secondary-button" type="button">Añadir Extra +</button><button id="clear-order" class="text-button" type="button" disabled>Vaciar pedido</button></div><div class="order-total"><span id="order-total-label">Total</span><strong id="order-total">$0.00</strong></div><p class="total-note">Incluye los extras seleccionados</p><button id="review-order" class="primary-button" type="button" disabled>Crear pedido <span aria-hidden="true">→</span></button><p class="local-note"><span class="status-dot" aria-hidden="true"></span><span id="storage-status">Expediente guardado en este navegador</span></p></div>
     </aside>
   </main>
   <button id="mobile-order-link" class="mobile-order-link" type="button" aria-controls="order-panel" hidden><span>Ver pedido <span id="mobile-order-count" class="mobile-count"></span></span><strong id="mobile-order-total"></strong><span aria-hidden="true">↓</span></button>
@@ -81,9 +96,10 @@
 
   <dialog id="review-dialog" class="modal review-modal" aria-labelledby="review-title">
     <div class="modal-heading"><div><p class="eyebrow">TODO LISTO</p><h2 id="review-title">Revisa tu pedido</h2></div><button class="close-button" type="button" data-close aria-label="Cerrar revisión">×</button></div>
-    <p id="review-label" class="modal-description"></p><div id="review-items" class="review-items"></div><div class="review-total"><span>Total del pedido</span><strong id="review-total"></strong></div><p class="muted export-note">Se guardará en este dispositivo y se abrirá la impresión de comandas para Cocina y Barra.</p><button id="confirm-order" class="primary-button" type="button">Confirmar pedido <span aria-hidden="true">✓</span></button>
+    <p id="review-label" class="modal-description"></p><div id="review-items" class="review-items"></div><div class="review-total"><span id="review-total-label">Total del pedido</span><strong id="review-total"></strong></div><p id="review-print-note" class="muted export-note">Se guardará en este dispositivo y se abrirá la impresión de comandas para Cocina y Barra.</p><button id="confirm-order" class="primary-button" type="button">Confirmar pedido <span aria-hidden="true">✓</span></button>
   </dialog>
   <dialog id="clear-dialog" class="modal small-modal" aria-labelledby="clear-title"><div class="modal-heading"><h2 id="clear-title">¿Vaciar este pedido?</h2><button type="button" class="close-button" data-close aria-label="Cerrar">×</button></div><p class="modal-description">Se quitarán los productos y sus personalizaciones del borrador actual.</p><div class="confirm-actions"><button type="button" class="secondary-button" data-close autofocus>Conservar pedido</button><button id="confirm-clear" type="button" class="primary-button">Vaciar pedido</button></div></dialog>
+  <dialog id="cancel-addition-dialog" class="modal small-modal" aria-labelledby="cancel-addition-title"><div class="modal-heading"><h2 id="cancel-addition-title">¿Cancelar los productos nuevos?</h2><button type="button" class="close-button" data-close aria-label="Cerrar">×</button></div><p class="modal-description">Se descartará esta selección. El pedido abierto y el borrador de tu próximo pedido se conservarán.</p><div class="confirm-actions"><button type="button" class="secondary-button" data-close autofocus>Seguir añadiendo</button><button id="confirm-cancel-addition" type="button" class="primary-button">Cancelar selección</button></div></dialog>
 
   <dialog id="extra-dialog" class="modal small-modal" aria-labelledby="extra-title">
     <form id="extra-form" novalidate><div class="modal-heading"><div><p class="eyebrow">PRODUCTO PERSONALIZADO</p><h2 id="extra-title">Añadir Extra</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar extras">×</button></div>
@@ -106,7 +122,7 @@
   </dialog>
 
   <dialog id="ticket-dialog" class="modal ticket-modal" aria-labelledby="ticket-title">
-    <div class="modal-heading"><div><p class="eyebrow">SEGUIMIENTO DEL PEDIDO</p><h2 id="ticket-title"></h2></div><button type="button" class="close-button" data-close aria-label="Cerrar pedido">×</button></div><p id="ticket-meta" class="modal-description"></p><div id="ticket-lines" class="ticket-lines"></div><div class="review-total"><span>Total del pedido</span><strong id="ticket-total"></strong></div><div class="ticket-actions"><button id="prepare-all" type="button" class="secondary-button">Preparar todo</button><button id="reprint-order" type="button" class="secondary-button">Reimprimir comandas</button><button id="pay-all" type="button" class="primary-button">Cobrar pendientes</button></div>
+    <div class="modal-heading"><div><p class="eyebrow">SEGUIMIENTO DEL PEDIDO</p><h2 id="ticket-title"></h2></div><button type="button" class="close-button" data-close aria-label="Cerrar pedido">×</button></div><p id="ticket-meta" class="modal-description"></p><div class="ticket-tools"><button id="add-to-order" type="button" class="secondary-button">Añadir productos +</button><button id="print-bill" type="button" class="secondary-button">Imprimir cuenta</button></div><div id="ticket-lines" class="ticket-lines"></div><div class="review-total"><span>Total del pedido</span><strong id="ticket-total"></strong></div><p id="ticket-balance" class="ticket-balance"></p><div class="ticket-actions"><button id="prepare-all" type="button" class="secondary-button">Preparar todo</button><button id="reprint-order" type="button" class="secondary-button">Reimprimir comandas</button><button id="pay-all" type="button" class="primary-button">Cobrar pendientes</button></div>
   </dialog>
 
   <dialog id="cash-open-dialog" class="modal small-modal cash-modal" aria-labelledby="cash-open-title" aria-describedby="cash-open-note">

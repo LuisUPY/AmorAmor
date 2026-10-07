@@ -39,6 +39,10 @@ async function main() {
     await context.addInitScript(({ key, state }) => { if (!localStorage.getItem(key)) localStorage.setItem(key, JSON.stringify(state)); }, { key: core.AmorStorage.KEY, state: seeded });
     await context.addInitScript(() => { window.print = () => setTimeout(() => window.dispatchEvent(new Event('afterprint')), 0); });
     const page = await context.newPage();
+    const appOption = async id => {
+      await page.locator('#app-options > summary').click();
+      await page.locator(id).click();
+    };
     await page.clock.setFixedTime(new Date('2026-10-05T16:00:00Z'));
     const errors = []; let downloads = 0;
     page.on('pageerror', error => errors.push(error.message));
@@ -110,7 +114,7 @@ async function main() {
     await page.locator('#extra-form button[type="submit"]').click();
     assert.equal(await page.locator('#order-total').textContent(), '$662.35');
     await page.locator('#order-label').fill('Mesa 03');
-    await page.locator('#save-expediente').click();
+    await appOption('#save-expediente');
     assert.equal(downloads, 0);
     await page.reload(); await page.waitForSelector('.product-card');
     await page.locator('#cash-open-dialog [data-close]').click();
@@ -139,7 +143,7 @@ async function main() {
     assert.equal(await page.locator('#ticket-lines .paid').count(), 1);
     assert.equal(await page.locator('#open-orders-count').textContent(), '1');
     await page.locator('#ticket-dialog [data-close]').click();
-    await page.locator('#history-button').click();
+    await appOption('#history-button');
     assert.equal(await page.locator('#history-category-kpis .history-metric').count(), 5);
     assert.equal(await page.locator('#history-summary .sales-total strong').textContent(), '$460.00');
     assert.equal(await page.locator('[data-categoria="Alimentos"] strong').textContent(), '2');
@@ -151,7 +155,7 @@ async function main() {
       await page.screenshot({ path: path.join(output, `pos-${width}.png`) });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Desbordamiento a ${width}px`);
       assert.equal(await page.locator('#open-orders-bar').evaluate(n => n.getBoundingClientRect().bottom <= innerHeight), true);
-      await page.locator('#history-button').click();
+      await appOption('#history-button');
       await page.screenshot({ path: path.join(output, `history-${width}.png`) });
       assert.equal(await page.locator('#history-dialog').evaluate(n => n.scrollWidth <= n.clientWidth), true);
       assert.equal(await page.locator('#history-detail').evaluate(n => n.scrollWidth <= n.clientWidth), true);
@@ -159,7 +163,7 @@ async function main() {
       assert.equal(await page.locator('#history-summary .sales-total strong').textContent(), '$210.00');
       assert.equal(await page.locator('#history-days [data-fecha="2026-10-03"]').evaluate(n => n === document.activeElement), true);
       await page.keyboard.press('Escape');
-      await page.locator('#load-expediente').click();
+      await appOption('#load-expediente');
       await page.locator('#load-days [data-fecha="2026-10-04"]').click();
       await page.locator('#load-selected-day').click();
       assert.equal(await page.locator('#history-summary .sales-total strong').textContent(), '$182.10');

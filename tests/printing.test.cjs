@@ -219,3 +219,32 @@ test('usa la salida del medio print como respaldo de afterprint', async () => {
   assert.equal(app.zona.children.length, 0);
   assert.equal(app.listenersActivos(), 0);
 });
+
+test('cuenta detallada: cantidades, precios con extras, abonos y saldo sin modificar la venta', async () => {
+  const app = entorno();
+  const food = { ...app.AmorPOS.crearPartida('chilaquiles-con-pollo-o-huevo', { salsa: 'roja', proteina: 'pollo', extras: ['huevo', 'pollo'] }, '<b>Sin cebolla</b>'), cantidad: 2 };
+  const coffee = app.AmorPOS.crearPartida('cafe-americano', { extras: ['leche-deslactosada', 'shot-de-espresso'] });
+  let ticket = app.AmorOrders.nuevoPedido([food, coffee], 'Mesa 3 · Ana', 42);
+  ticket = app.AmorOrders.marcarPartida(ticket, ticket.partidas[0].id, 'pagado');
+  const before = JSON.stringify(ticket);
+  const job = app.imprimirCuenta(ticket);
+  await assert.rejects(app.imprimirComandas(ticket), /en curso/);
+  app.lanzarFrame();
+  assert.deepEqual(app.capturas[0].areas, ['CUENTA']);
+  const text = app.capturas[0].texto;
+  assert.match(text, /Mesa 3 · Ana/);
+  assert.match(text, /2 x Chilaquiles/);
+  assert.match(text, /\$230\.00 c\/u\$460\.00/);
+  assert.match(text, /\$100\.00 c\/u\$100\.00/);
+  assert.match(text, /TOTAL\$560\.00Abonado\$460\.00Pendiente de pago\$100\.00/);
+  assert.match(text, /Nota: <b>Sin cebolla<\/b>/);
+  assert.equal(JSON.stringify(ticket), before);
+  app.afterprint(); await job;
+  assert.equal(app.zona.children.length, 0);
+  const invalid = { ...ticket, totalCentavos: 1 };
+  await assert.rejects(app.imprimirCuenta(invalid), /total/);
+  ticket = app.AmorOrders.marcarPartida(ticket, 'todos', 'pagado');
+  const settled = app.imprimirCuenta(ticket);
+  app.lanzarFrame(); app.afterprint(); await settled;
+  assert.match(app.capturas[1].texto, /Abonado\$560\.00Pendiente de pago\$0\.00/);
+});
