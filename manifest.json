@@ -1,0 +1,18 @@
+{
+  "background_color": "#ffffff",
+  "description": "Catálogo y pedidos de Amor &amp; Amor Cafetería.",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "Amor&amp;Amor",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "Amor&amp;Amor",
+  "start_url": "/",
+  "theme_color": "#183d32",
+  "lang": "es",
+  "categories": [
+    "finance",
+    "productivity",
+    "utilities"
+  ]
+}
