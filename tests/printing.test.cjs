@@ -58,7 +58,7 @@ function entorno() {
   };
   const document = { body, getElementById: id => id === 'zona-impresion' ? zona : null, createElement: etiqueta => new Elemento(etiqueta) };
   const context = vm.createContext({ window, document, Intl });
-  for (const file of ['menuData.js', 'orderCore.js', 'orders.js', 'printing.js']) {
+  for (const file of ['menuData.js', 'orderCore.js', 'orders.js', 'cash.js', 'printing.js']) {
     vm.runInContext(fs.readFileSync(path.join(__dirname, '..', 'js', file), 'utf8'), context, { filename: file });
   }
   return {
@@ -247,4 +247,104 @@ test('cuenta detallada: cantidades, precios con extras, abonos y saldo sin modif
   const settled = app.imprimirCuenta(ticket);
   app.lanzarFrame(); app.afterprint(); await settled;
   assert.match(app.capturas[1].texto, /Abonado\$560\.00Pendiente de pago\$0\.00/);
+});
+
+function corteGuardado(app, config = { tipo: 'igual', personas: 3 }) {
+  let caja = app.AmorCash.abrirCaja(undefined, '350', '2026-10-06T15:05:00Z');
+  const ticket = app.AmorOrders.nuevoPedido([app.AmorPOS.crearPartida('cafe-americano')], 'Mesa 3', 1);
+  caja = app.AmorCash.cobrarPartidas(ticket, 'todos', caja,
+    { efectivoRecibido: '20', montoTarjeta: '45' }, '2026-10-06T15:10:00Z').caja;
+  caja = app.AmorCash.registrarGasto(caja, '15', '<img src=x onerror=alert(1)> Insumos', '2026-10-06T15:15:00Z');
+  caja = app.AmorCash.registrarPropina(caja, '100.01', 'efectivo', '2026-10-06T15:20:00Z');
+  caja = app.AmorCash.registrarPropina(caja, '50', 'tarjeta', '2026-10-06T15:25:00Z');
+  caja = app.AmorCash.configurarRepartoPropinas(caja, config);
+  return app.AmorCash.cerrarCaja(caja, '2026-10-06T20:30:00Z').corte;
+}
+
+test('corte térmico imprime un ticket con ventas, gastos, propinas y reparto exacto de una instantánea', async () => {
+  const app = entorno();
+  const corte = corteGuardado(app);
+  const original = JSON.stringify(corte);
+  const job = app.imprimirCorte(corte);
+  assert.equal(app.zona.children.length, 1);
+  assert.equal(JSON.stringify(corte), original);
+  corte.gastosDelDia[0].concepto = 'Cambio posterior';
+  corte.repartoPropinas.personas = 50;
+  app.afterprint();
+  assert.equal(app.zona.children.length, 1);
+  app.lanzarFrame();
+  const { texto, areas } = app.capturas[0];
+  assert.deepEqual(areas, ['CORTE']);
+  assert.match(texto, /AMOR & AMORCORTE DE CAJA/);
+  assert.match(texto, /Apertura: 06\/10\/2026.*09:05/);
+  assert.match(texto, /Cierre: 06\/10\/2026.*14:30/);
+  assert.match(texto, /Fondo inicial\$350\.00/);
+  assert.match(texto, /Ventas en efectivo\$20\.00/);
+  assert.match(texto, /Gastos extra\$15\.00/);
+  assert.match(texto, /Propinas en efectivo\$100\.01/);
+  assert.match(texto, /Efectivo esperado\$455\.01/);
+  assert.match(texto, /Ventas en tarjeta\/transferencia\$45\.00/);
+  assert.match(texto, /Propinas en tarjeta\/transferencia\$50\.00/);
+  assert.match(texto, /TOTAL VENTAS\$65\.00TOTAL PROPINAS\$150\.01/);
+  assert.match(texto, /<img src=x onerror=alert\(1\)> Insumos\$15\.00/);
+  assert.match(texto, /Partes iguales entre 3 personas/);
+  assert.match(texto, /Persona 1\$50\.01Persona 2\$50\.00Persona 3\$50\.00/);
+  assert.doesNotMatch(texto, /Cambio posterior/);
+  assert.equal(app.zona.children.length, 1);
+  app.afterprint();
+  const resultado = await job;
+  assert.equal(resultado.id, corte.id);
+  assert.deepEqual(copia(resultado.areas), ['CORTE']);
+  assert.equal(app.zona.children.length, 0);
+  assert.equal(app.listenersActivos(), 0);
+});
+
+test('corte térmico conserva nombres seguros y porcentajes y admite cortes antiguos sin propinas', async () => {
+  const app = entorno();
+  const corte = corteGuardado(app, { tipo: 'porcentaje', personas: [
+    { nombre: '<svg onload=alert(2)> Ana', porcentaje: 70 }, { nombre: 'Luis', porcentaje: 30 }
+  ] });
+  const job = app.imprimirCorte(corte);
+  app.lanzarFrame(); app.afterprint(); await job;
+  assert.match(app.capturas[0].texto, /Por porcentaje entre 2 personas/);
+  assert.match(app.capturas[0].texto, /<svg onload=alert\(2\)> Ana \(70%\)\$105\.01Luis \(30%\)\$45\.00/);
+
+  // Cortes de versiones anteriores guardaban únicamente ventas y gastos.
+  const antiguo = {
+    id: 'turno-antiguo', turnoId: 'turno-antiguo', abiertoEn: '2026-10-06T15:05:00Z', cerradoEn: '2026-10-06T20:30:00Z',
+    fondoInicialCentavos: 35000, ventasEfectivoCentavos: 0, gastosExtrasCentavos: 0,
+    efectivoEsperadoCentavos: 35000, ventasTarjetaCentavos: 0, totalVentasCentavos: 0,
+    gastosDelDia: [], pagos: []
+  };
+  const anterior = app.imprimirCorte(antiguo);
+  app.lanzarFrame(); app.afterprint(); await anterior;
+  assert.match(app.capturas[1].texto, /TOTAL PROPINAS\$0\.00/);
+  assert.match(app.capturas[1].texto, /Sin gastos registrados/);
+  assert.match(app.capturas[1].texto, /Reparto sin configurar/);
+});
+
+test('corte usa el bloqueo compartido, rechaza datos abiertos o inconsistentes y libera errores de impresión', async () => {
+  const app = entorno();
+  const corte = corteGuardado(app);
+  const job = app.imprimirCorte(corte);
+  await assert.rejects(app.imprimirCorte(corte), /en curso/);
+  await assert.rejects(app.imprimirComandas(pedido([simple('Pan', 'Entradas')])), /en curso/);
+  app.lanzarFrame();
+  app.cambiarMedio(true); app.cambiarMedio(false);
+  await job;
+  assert.equal(app.zona.children.length, 0);
+  await assert.rejects(app.imprimirCorte(app.AmorCash.abrirCaja(undefined, '350')), /Corte de caja inválido/);
+  await assert.rejects(app.imprimirCorte({ ...corte, totalVentasCentavos: 1 }), /sumas.*inconsistentes/);
+  await assert.rejects(app.imprimirCorte({ ...corte, cerradoEn: '2026-10-06T15:05:00Z' }), /posteriores al cierre/);
+  assert.equal(app.capturas.length, 1);
+  app.fallarImpresora(true);
+  const fallida = app.imprimirCorte(corte);
+  app.lanzarFrame();
+  await assert.rejects(fallida, /Impresora no disponible/);
+  assert.equal(app.zona.children.length, 0);
+  assert.equal(app.listenersActivos(), 0);
+  app.fallarImpresora(false);
+  const reintento = app.imprimirCorte(corte);
+  app.lanzarFrame(); app.afterprint(); await reintento;
+  assert.equal(app.capturas.length, 2);
 });

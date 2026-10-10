@@ -2,6 +2,47 @@
 globalThis.AmorOrders = (() => {
   'use strict';
   const copia = value => JSON.parse(JSON.stringify(value));
+  const textoEtiqueta = etiqueta => String(etiqueta).normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().replace(/\s+/g, ' ').toLowerCase();
+  function numeroDelivery(etiqueta) {
+    const match = textoEtiqueta(etiqueta).match(/^delivery\s*#\s*(\d+)(?=$|\s|·)/);
+    const numero = match ? Number(match[1]) : null;
+    return Number.isSafeInteger(numero) && numero > 0 ? numero : null;
+  }
+  function claveEtiqueta(etiqueta) {
+    const texto = textoEtiqueta(etiqueta);
+    if (!texto) return '';
+    // El detalle del cliente no cambia la ocupación de una mesa.
+    const mesa = texto.match(/^mesa\s*0*([1-8])(?=$|[^\p{L}\p{N}])/u);
+    if (mesa) return `mesa:${mesa[1]}`;
+    const delivery = numeroDelivery(etiqueta);
+    return delivery === null ? `etiqueta:${texto}` : `delivery:${delivery}`;
+  }
+  function pedidoConEtiqueta(pedidos, etiqueta, ignorarId = null) {
+    const clave = claveEtiqueta(etiqueta);
+    return clave ? pedidos.find(pedido => pedido.id !== ignorarId && estaAbierto(pedido) && claveEtiqueta(pedido.etiqueta) === clave) || null : null;
+  }
+  function siguienteDelivery(pedidos, minimo = 1) {
+    if (!Number.isSafeInteger(minimo) || minimo < 1) throw new Error('Numeración de delivery inválida.');
+    let siguiente = minimo;
+    for (const pedido of pedidos) {
+      const numero = numeroDelivery(pedido.etiqueta);
+      if (numero !== null) siguiente = Math.max(siguiente, numero + 1);
+    }
+    if (!Number.isSafeInteger(siguiente)) throw new Error('Se agotó la numeración de delivery.');
+    return siguiente;
+  }
+  function resolverEtiqueta(etiqueta, pedidos, minimoDelivery = 1) {
+    let resultado = etiqueta.trim();
+    if (/^delivery(?:\s*#\s*\d+)?(?:\s*·.*)?$/.test(textoEtiqueta(resultado))) {
+      const separador = resultado.indexOf('·');
+      const detalle = separador < 0 ? '' : resultado.slice(separador + 1).trim();
+      resultado = `Delivery #${siguienteDelivery(pedidos, minimoDelivery)}${detalle ? ` · ${detalle}` : ''}`;
+    }
+    resultado = resultado.slice(0, 60);
+    const ocupado = pedidoConEtiqueta(pedidos, resultado);
+    if (ocupado) throw new Error(`${resultado || 'Esta etiqueta'} ya tiene un pedido abierto (N° ${ocupado.numero}). Ábrelo en Pedidos abiertos para añadir productos.`);
+    return resultado;
+  }
   function nuevoPedido(partidas, etiqueta, numero, fecha = new Date().toISOString()) {
     if (!partidas.length) throw new Error('Agrega productos al pedido.');
     if (!Number.isSafeInteger(numero) || numero < 1) throw new Error('Número de pedido inválido.');
@@ -54,5 +95,6 @@ globalThis.AmorOrders = (() => {
     resultado.estado = estadoPedido(resultado);
     return resultado;
   }
-  return Object.freeze({ nuevoPedido, estadoPedido, estaAbierto, marcarPartida, agregarPartidas });
+  return Object.freeze({ nuevoPedido, estadoPedido, estaAbierto, marcarPartida, agregarPartidas,
+    claveEtiqueta, pedidoConEtiqueta, numeroDelivery, siguienteDelivery, resolverEtiqueta });
 })();

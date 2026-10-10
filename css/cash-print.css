@@ -81,3 +81,19 @@
   .cuenta-total { font-size: 18px; font-weight: bold; }
   .cuenta-saldo { font-weight: bold; margin-top: 10px; }
 }
+
+/* El corte comparte el papel térmico de las comandas y ocupa un solo ticket. */
+@media print {
+  .corte-resumen { margin: 12px 0; }
+  .corte-fila { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; margin: 7px 0; }
+  .corte-fila > span { min-width: 0; overflow-wrap: anywhere; }
+  .corte-fila > strong { flex-shrink: 0; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .corte-destacado { font-size: 15px; font-weight: bold; border-top: 1px dashed #000; border-bottom: 1px dashed #000; padding: 8px 0; }
+  .corte-total { font-weight: bold; margin-top: 10px; }
+  .corte-seccion { margin-top: 14px; border-top: 1px dashed #000; padding-top: 8px; }
+  .corte-seccion h4 { font-size: 13px; margin: 0 0 8px; }
+  .corte-seccion > p { margin: 6px 0; }
+  .corte-movimiento, .corte-fila { break-inside: avoid; page-break-inside: avoid; }
+  .corte-fecha, .corte-ayuda { font-size: 11px; line-height: 1.4; margin: 4px 0; }
+  .corte-movimiento + .corte-movimiento { margin-top: 10px; }
+}

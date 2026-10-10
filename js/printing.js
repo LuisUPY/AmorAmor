@@ -127,37 +127,107 @@
     return ticket;
   }
 
-  function imprimirPedido(pedido, tipo) {
+  function fechaImpresion(fecha) {
+    const instante = new Date(fecha);
+    if (!Number.isFinite(instante.getTime())) throw new Error('La fecha del documento no es válida.');
+    return new Intl.DateTimeFormat('es-MX', {
+      timeZone: 'America/Merida', year: 'numeric', month: '2-digit', day: '2-digit',
+      hour: '2-digit', minute: '2-digit', hour12: false
+    }).format(instante);
+  }
+
+  function filaCorte(etiqueta, centavos, clase = '') {
+    const fila = elemento('div', `corte-fila ${clase}`);
+    fila.append(elemento('span', '', etiqueta), elemento('strong', '', AmorPOS.dinero(centavos / 100)));
+    return fila;
+  }
+
+  function crearCorte(corte, propinas) {
+    const ticket = elemento('section', 'comanda-ticket corte-ticket');
+    ticket.dataset.area = 'CORTE';
+    const cabecera = elemento('header', 'comanda-cabecera');
+    cabecera.append(elemento('h2', '', 'AMOR & AMOR'), elemento('h3', 'comanda-area', 'CORTE DE CAJA'),
+      elemento('p', '', `Apertura: ${fechaImpresion(corte.abiertoEn)}`),
+      elemento('p', '', `Cierre: ${fechaImpresion(corte.cerradoEn)}`));
+    ticket.append(cabecera, elemento('p', 'corte-ayuda', 'Importes en MXN. Turno cerrado.'));
+    const resumen = elemento('div', 'corte-resumen');
+    for (const [etiqueta, clave, clase] of [
+      ['Fondo inicial', 'fondoInicialCentavos', ''],
+      ['Ventas en efectivo', 'ventasEfectivoCentavos', ''],
+      ['Gastos extra', 'gastosExtrasCentavos', ''],
+      ['Propinas en efectivo', 'propinasEfectivoCentavos', ''],
+      ['Efectivo esperado', 'efectivoEsperadoCentavos', 'corte-destacado'],
+      ['Ventas en tarjeta/transferencia', 'ventasTarjetaCentavos', ''],
+      ['Propinas en tarjeta/transferencia', 'propinasTarjetaCentavos', ''],
+      ['TOTAL VENTAS', 'totalVentasCentavos', 'corte-total'],
+      ['TOTAL PROPINAS', 'totalPropinasCentavos', 'corte-total']
+    ]) resumen.append(filaCorte(etiqueta, corte[clave], clase));
+    ticket.append(resumen);
+
+    const gastos = elemento('section', 'corte-seccion');
+    gastos.append(elemento('h4', '', 'DETALLE DE GASTOS'));
+    if (!corte.gastosDelDia.length) gastos.append(elemento('p', '', 'Sin gastos registrados.'));
+    for (const gasto of corte.gastosDelDia) {
+      const detalle = elemento('div', 'corte-movimiento');
+      detalle.append(filaCorte(gasto.concepto, gasto.montoCentavos),
+        elemento('p', 'corte-fecha', fechaImpresion(gasto.fecha)));
+      gastos.append(detalle);
+    }
+    ticket.append(gastos);
+
+    const reparto = elemento('section', 'corte-seccion');
+    reparto.append(elemento('h4', '', 'REPARTO DE PROPINAS'));
+    if (!propinas.configurado) reparto.append(elemento('p', '', 'Reparto sin configurar.'));
+    else {
+      const iguales = corte.repartoPropinas.tipo === 'igual';
+      const personas = propinas.reparto.length;
+      reparto.append(elemento('p', '', iguales
+        ? `Partes iguales entre ${personas} ${personas === 1 ? 'persona' : 'personas'}.`
+        : `Por porcentaje entre ${personas} ${personas === 1 ? 'persona' : 'personas'}.`));
+      for (const persona of propinas.reparto) {
+        const etiqueta = iguales ? persona.nombre : `${persona.nombre} (${persona.porcentaje}%)`;
+        reparto.append(filaCorte(etiqueta, persona.montoCentavos));
+      }
+      reparto.append(elemento('p', 'corte-ayuda', 'Reparto calculado al centavo sobre el total de propinas.'));
+    }
+    ticket.append(reparto, elemento('footer', 'comanda-pie', '--- FIN DEL CORTE ---'));
+    return ticket;
+  }
+
+  function imprimirDocumento(documento, tipo) {
     if (impresionActiva) return Promise.reject(new Error('Hay una impresión en curso. Cierra su diálogo antes de reimprimir.'));
     let zona;
     let copia;
     let comandas;
     let fechaHora;
+    let propinas;
     try {
       if (typeof window === 'undefined' || typeof window.print !== 'function') throw new Error('Este navegador no permite imprimir.');
       zona = document.getElementById('zona-impresion');
       if (!zona || zona.parentElement !== document.body) throw new Error('La zona de impresión debe ser un contenedor directo del body.');
-      if (!Number.isSafeInteger(pedido?.numero) || pedido.numero < 1) throw new Error('El número de pedido no es válido.');
       // La impresión usa una instantánea: modificar la venta mientras se prepara
       // el diálogo no debe cambiar sus cantidades ni sus modificadores.
-      copia = JSON.parse(JSON.stringify(pedido));
-      comandas = separarComandas(copia);
-      if (tipo === 'cuenta') {
-        const total = AmorPOS.totalPedido(copia.partidas);
-        if (copia.totalCentavos !== total) throw new Error('El total de la cuenta no coincide con sus productos.');
+      copia = JSON.parse(JSON.stringify(documento));
+      if (tipo === 'corte') {
+        // Solo los cortes finalizados con movimientos y sumas válidas pueden
+        // imprimirse. Los datos de la caja abierta no son un corte guardado.
+        copia = AmorCash.normalizarCorte(copia);
+        propinas = AmorCash.resumirPropinas(copia);
+      } else {
+        if (!Number.isSafeInteger(copia?.numero) || copia.numero < 1) throw new Error('El número de pedido no es válido.');
+        comandas = separarComandas(copia);
+        if (tipo === 'cuenta') {
+          const total = AmorPOS.totalPedido(copia.partidas);
+          if (copia.totalCentavos !== total) throw new Error('El total de la cuenta no coincide con sus productos.');
+        }
+        fechaHora = fechaImpresion(copia.creadoEn);
       }
-      const fecha = new Date(copia.creadoEn);
-      if (!Number.isFinite(fecha.getTime())) throw new Error('La fecha del pedido no es válida.');
-      fechaHora = new Intl.DateTimeFormat('es-MX', {
-        timeZone: 'America/Merida', year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false
-      }).format(fecha);
     } catch (error) {
       return Promise.reject(error);
     }
 
     return new Promise((resolve, reject) => {
-      const trabajo = { numero: copia.numero, invocada: false, finalizado: false };
+      const trabajo = { invocada: false, finalizado: false };
       impresionActiva = trabajo;
       const areas = [];
       let medioImpresion = null;
@@ -177,7 +247,7 @@
         if (error) reject(error);
         // afterprint indica cierre del diálogo, incluso al cancelar; el navegador
         // no informa si el papel realmente salió de la impresora.
-        else resolve({ numero: copia.numero, areas });
+        else resolve(tipo === 'corte' ? { id: copia.id, areas } : { numero: copia.numero, areas });
       }
       function alTerminar() {
         if (trabajo.invocada) finalizar();
@@ -200,7 +270,10 @@
 
       try {
         zona.replaceChildren();
-        if (tipo === 'cuenta') {
+        if (tipo === 'corte') {
+          zona.append(crearCorte(copia, propinas));
+          areas.push('CORTE');
+        } else if (tipo === 'cuenta') {
           zona.append(crearCuenta(copia, fechaHora));
           areas.push('CUENTA');
         } else {
@@ -230,9 +303,11 @@
     });
   }
 
-  const imprimirComandas = pedido => imprimirPedido(pedido, 'comandas');
-  const imprimirCuenta = pedido => imprimirPedido(pedido, 'cuenta');
-  globalThis.AmorPrinting = Object.freeze({ separarComandas, imprimirComandas, imprimirCuenta });
+  const imprimirComandas = pedido => imprimirDocumento(pedido, 'comandas');
+  const imprimirCuenta = pedido => imprimirDocumento(pedido, 'cuenta');
+  const imprimirCorte = corte => imprimirDocumento(corte, 'corte');
+  globalThis.AmorPrinting = Object.freeze({ separarComandas, imprimirComandas, imprimirCuenta, imprimirCorte });
   globalThis.imprimirComandas = imprimirComandas;
   globalThis.imprimirCuenta = imprimirCuenta;
+  globalThis.imprimirCorte = imprimirCorte;
 })();

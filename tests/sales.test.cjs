@@ -103,4 +103,69 @@ const normalizedAddition = storage.normalizar(additionState);
 assert.equal(normalizedAddition.adicion.partidas[0].cantidad, 3);
 assert.equal(normalizedAddition.borrador.etiqueta, 'Próximo pedido');
 assert.throws(() => storage.normalizar({ ...additionState, adicion: { pedidoId: 'pedido-no-existe', partidas: [] } }), /Selección/);
+
+// Una mesa está ocupada hasta preparar y cobrar todas sus partidas; el detalle no permite duplicarla.
+assert.equal(orders.claveEtiqueta('  Mésa   0003 · Otro cliente  '), 'mesa:3');
+assert.equal(orders.claveEtiqueta('Mesa 3. Ana'), 'mesa:3');
+assert.equal(orders.claveEtiqueta('Mesa 13'), 'etiqueta:mesa 13');
+assert.equal(orders.pedidoConEtiqueta([open], 'mesa 03 · Otra persona').id, open.id);
+assert.throws(() => orders.resolverEtiqueta('MESA 03 · Otra persona', [open]), /pedido abierto/);
+assert.equal(orders.resolverEtiqueta('Mesa 03', [ticket]), 'Mesa 03');
+let reserved = orders.nuevoPedido([coffee], 'Mesa 2', 20);
+reserved = orders.marcarPartida(reserved, 'todos', 'pagado');
+assert.ok(orders.pedidoConEtiqueta([reserved], 'Mesa 02'));
+reserved = orders.marcarPartida(reserved, 'todos', 'preparado');
+assert.equal(orders.pedidoConEtiqueta([reserved], 'Mesa 02'), null);
+const customLabel = orders.nuevoPedido([coffee], '  Ana   López  ', 21);
+assert.throws(() => orders.resolverEtiqueta('ana   lópez', [customLabel]), /pedido abierto/);
+assert.equal(orders.resolverEtiqueta('', [orders.nuevoPedido([coffee], '', 22)]), '');
+
+// Delivery usa toda la historia, incluso pedidos cerrados, y la vista previa no consume un número.
+let deliveryHistory = orders.nuevoPedido([coffee], 'Delivery #12 · Luis', 23);
+deliveryHistory = orders.marcarPartida(deliveryHistory, 'todos', 'pagado');
+deliveryHistory = orders.marcarPartida(deliveryHistory, 'todos', 'preparado');
+assert.equal(orders.siguienteDelivery([deliveryHistory]), 13);
+assert.equal(orders.resolverEtiqueta('Delivery · Ana', [deliveryHistory]), 'Delivery #13 · Ana');
+assert.equal(orders.resolverEtiqueta('Delivery · Ana', [deliveryHistory]), 'Delivery #13 · Ana');
+assert.equal(orders.resolverEtiqueta('Delivery #01 · Otra dirección', [deliveryHistory]), 'Delivery #13 · Otra dirección');
+assert.equal(storage.normalizar({ ...storage.vacio(), pedidos: [deliveryHistory] }).siguienteDelivery, 13);
+assert.equal(storage.normalizar({ ...storage.vacio(), pedidos: [deliveryHistory], siguienteDelivery: 50 }).siguienteDelivery, 50);
+assert.throws(() => storage.normalizar({ ...storage.vacio(), siguienteDelivery: -1 }), /delivery inválida/);
+
+// Las etiquetas duplicadas heredadas se pueden cargar y guardar; los pedidos nuevos se validan antes de escribir.
+data.delete(storage.KEY);
+data.delete('amor-amor-pos:borrador:v1');
+const oldDuplicates = { ...storage.vacio(), pedidos: [orders.nuevoPedido([coffee], 'Mesa 02', 30), orders.nuevoPedido([coffee], 'MESA 2 · Ana', 31)] };
+data.set(storage.KEY, JSON.stringify(oldDuplicates));
+let labelState = storage.guardarExpediente(storage.cargarExpediente());
+assert.equal(labelState.pedidos.length, 2);
+const duplicateSnapshot = data.get(storage.KEY);
+const duplicateAttempt = JSON.parse(JSON.stringify(labelState));
+duplicateAttempt.pedidos.push(orders.nuevoPedido([coffee], 'Mesa 2 · Pedro', 32));
+assert.throws(() => storage.guardarExpediente(duplicateAttempt), /etiqueta.*pedido abierto/);
+assert.equal(data.get(storage.KEY), duplicateSnapshot);
+labelState.pedidos = labelState.pedidos.map(p => orders.marcarPartida(orders.marcarPartida(p, 'todos', 'preparado'), 'todos', 'pagado'));
+labelState = storage.guardarExpediente(labelState);
+labelState.pedidos.push(orders.nuevoPedido([coffee], 'Mesa 2 · Nueva visita', 32));
+labelState = storage.guardarExpediente(labelState);
+assert.equal(labelState.pedidos.length, 3);
+
+data.delete(storage.KEY);
+let deliveryState = storage.guardarExpediente({ ...storage.vacio(), pedidos: [deliveryHistory] });
+const staleDelivery = JSON.parse(JSON.stringify(deliveryState));
+deliveryState.pedidos.push(orders.nuevoPedido([coffee], orders.resolverEtiqueta('Delivery · Clara', deliveryState.pedidos, deliveryState.siguienteDelivery), 24));
+deliveryState = storage.guardarExpediente(deliveryState);
+assert.equal(storage.cargarExpediente().siguienteDelivery, 14);
+staleDelivery.pedidos.push(orders.nuevoPedido([coffee], 'Delivery #13 · Otra pestaña', 25));
+assert.throws(() => storage.guardarExpediente(staleDelivery), /otra pestaña/);
+const reusedDelivery = JSON.parse(JSON.stringify(deliveryState));
+reusedDelivery.pedidos.push(orders.nuevoPedido([coffee], 'Delivery #12 · Repetido', 25));
+assert.throws(() => storage.guardarExpediente(reusedDelivery), /ya fue utilizado/);
+const failedDelivery = JSON.parse(JSON.stringify(deliveryState));
+failedDelivery.pedidos.push(orders.nuevoPedido([coffee], 'Delivery #14', 25));
+failWrite = true;
+assert.throws(() => storage.guardarExpediente(failedDelivery), /QuotaExceeded/);
+failWrite = false;
+assert.equal(storage.cargarExpediente().siguienteDelivery, 14);
+assert.equal(storage.guardarExpediente(failedDelivery).siguienteDelivery, 15);
 console.log('✓ Estados por producto, pagos parciales, cortes de Mérida, extras y almacenamiento íntegro verificados.');

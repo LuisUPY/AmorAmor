@@ -35,6 +35,33 @@ body { padding-bottom: calc(var(--queue-height) + 22px); }
 .label-preset[aria-pressed="true"] { background: var(--forest); border-color: var(--forest); color: var(--paper); font-weight: 600; }
 .addition-notice { background: var(--forest-soft); border-radius: 9px; padding: 12px; margin-bottom: 12px; font-size: 11px; line-height: 1.7; flex: none; }
 .addition-notice > button { margin-top: 5px; }
+.cash-payment-inputs input::placeholder { color: #899082; opacity: 1; }
+.tips-modal { width: min(640px, calc(100% - 28px)); }
+.tips-collected { background: var(--forest-soft); border-radius: 12px; padding: 22px 16px; margin: 20px 0; text-align: center; }
+.tips-collected > span { display: block; font-size: 12px; color: var(--muted); }
+.tips-collected > strong { display: block; font-size: 36px; margin: 7px 0; font-variant-numeric: tabular-nums; }
+.tips-collected > p { font-size: 11px; line-height: 1.7; }
+.tips-modal h3, .cash-cut-tips h3 { font-size: 14px; font-weight: 600; }
+.tips-input-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.tips-input-row .cash-field { margin: 14px 0; }
+.tips-input-row select { display: block; width: 100%; margin-top: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--cream); color: var(--ink); font: inherit; }
+.tips-input-row select:focus-visible { outline: 2px solid var(--forest); outline-offset: 2px; }
+.tips-split-form { border-top: 1px solid var(--line); padding-top: 20px; margin-top: 20px; }
+.tips-percentages { display: grid; gap: 8px; margin-bottom: 14px; }
+.tips-person-row { display: grid; grid-template-columns: minmax(0, 1fr) 115px; gap: 10px; }
+.tips-person-row input { width: 100%; min-width: 0; padding: 10px; border: 1px solid var(--line); background: var(--cream); border-radius: 7px; font-size: 12px; }
+.tips-percent-field { display: flex; align-items: center; gap: 7px; font-size: 12px; }
+.tips-split-list { list-style: none; padding: 0; margin: 12px 0; font-size: 12px; }
+.tips-split-list > li { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; padding: 10px 0; border-bottom: 1px dashed var(--line); }
+.tips-split-list > li > span { min-width: 0; overflow-wrap: anywhere; }
+.tips-split-list > li > strong { flex-shrink: 0; white-space: nowrap; font-variant-numeric: tabular-nums; }
+#tips-split-status[data-state="invalid"] { color: var(--error); }
+.cash-cut-tips { padding: 16px 0 6px; border-top: 1px solid var(--line); }
+.print-cut-button { margin-top: 10px; }
+@media (max-width: 400px) {
+  .tips-input-row { grid-template-columns: 1fr; gap: 0; }
+  .tips-person-row { grid-template-columns: minmax(0, 1fr) 88px; gap: 7px; }
+}
 .extra-field { display: block; font-size: 12px; margin: 22px 0 15px; }
 .extra-field input { display: block; width: 100%; margin-top: 8px; background: var(--cream); border: 1px solid var(--line); border-radius: 8px; padding: 12px; color: var(--ink); }
 #extra-form > .primary-button { width: 100%; margin-top: 18px; }

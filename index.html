@@ -31,6 +31,7 @@
         <nav class="options-panel" aria-label="Control de caja">
           <button id="cash-open-button" type="button">Abrir caja</button>
           <button id="cash-expense-button" type="button" disabled>Registrar gasto extra</button>
+          <button id="cash-tips-button" type="button" disabled>Propinas y reparto</button>
           <button id="cash-close-button" type="button" disabled>Corte de caja</button>
           <button id="cash-history-button" type="button">Cortes guardados</button>
         </nav>
@@ -141,10 +142,10 @@
       <p id="cash-payment-note" class="modal-description"></p>
       <div class="cash-payment-total"><span>Total a Pagar</span><strong id="cash-payment-total">$0.00</strong></div>
       <div class="cash-payment-inputs">
-        <label class="cash-field" for="cash-payment-cash">Monto recibido en Efectivo ($)<input id="cash-payment-cash" name="efectivoRecibido" type="number" inputmode="decimal" min="0" step="0.01" value="0" required aria-describedby="cash-payment-help cash-payment-status" autofocus></label>
-        <label class="cash-field" for="cash-payment-card">Monto en Tarjeta/Transferencia ($)<input id="cash-payment-card" name="montoTarjeta" type="number" inputmode="decimal" min="0" step="0.01" value="0" required aria-describedby="cash-payment-help cash-payment-status"></label>
+        <label class="cash-field" for="cash-payment-cash">Monto recibido en Efectivo ($)<input id="cash-payment-cash" name="efectivoRecibido" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0" aria-describedby="cash-payment-help cash-payment-status" autofocus></label>
+        <label class="cash-field" for="cash-payment-card">Monto en Tarjeta/Transferencia ($)<input id="cash-payment-card" name="montoTarjeta" type="number" inputmode="decimal" min="0" step="0.01" placeholder="0" aria-describedby="cash-payment-help cash-payment-status"></label>
       </div>
-      <p id="cash-payment-help" class="group-help">Puedes combinar ambos métodos. El cambio se entrega del efectivo recibido.</p>
+      <p id="cash-payment-help" class="group-help">Puedes combinar ambos métodos. Un campo vacío equivale a $0.00. El cambio se entrega del efectivo recibido.</p>
       <p id="cash-payment-status" class="cash-payment-status" data-state="missing" role="status" aria-live="polite" aria-atomic="true">Faltan: $0.00</p>
       <p id="cash-payment-error" class="form-error" role="alert" hidden></p>
       <button id="cash-payment-confirm" type="submit" class="primary-button" disabled>Confirmar Pago</button>
@@ -162,12 +163,43 @@
     </form>
   </dialog>
 
+  <dialog id="cash-tips-dialog" class="modal cash-modal tips-modal" aria-labelledby="cash-tips-title">
+    <div class="modal-heading"><div><p class="eyebrow">PARA EL EQUIPO</p><h2 id="cash-tips-title">Propinas del turno</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar propinas">×</button></div>
+    <p class="modal-description">Registra las propinas recibidas y acuerda cómo repartirlas al cerrar.</p>
+    <div class="tips-collected"><span>Total recolectado</span><strong id="tips-total">$0.00</strong><p id="tips-methods"></p></div>
+    <form id="cash-tip-form" novalidate>
+      <h3>Registrar propina</h3>
+      <div class="tips-input-row">
+        <label class="cash-field" for="cash-tip-amount">Monto ($)<input id="cash-tip-amount" type="text" inputmode="decimal" maxlength="12" placeholder="0" required></label>
+        <label class="cash-field" for="cash-tip-method">Recibida en<select id="cash-tip-method"><option value="efectivo">Efectivo</option><option value="tarjeta">Tarjeta / transferencia</option></select></label>
+      </div>
+      <p id="cash-tip-error" class="form-error" role="alert" hidden></p>
+      <button type="submit" class="secondary-button">Guardar propina</button>
+    </form>
+    <details class="cash-expenses tips-records"><summary id="tips-records-title">Propinas registradas</summary><ul id="tips-records-list"></ul></details>
+    <form id="tips-split-form" class="tips-split-form" novalidate>
+      <h3>Repartir propinas</h3>
+      <div class="tips-input-row">
+        <label class="cash-field" for="tips-split-type">Forma de reparto<select id="tips-split-type"><option value="igual">Partes iguales</option><option value="porcentaje">Por porcentaje</option></select></label>
+        <label class="cash-field" for="tips-people-count">Número de personas<input id="tips-people-count" type="number" min="1" max="50" step="1" value="2" required></label>
+      </div>
+      <div id="tips-percentages" class="tips-percentages" hidden></div>
+      <p id="tips-split-status" class="group-help" role="status" aria-live="polite"></p>
+      <ul id="tips-split-preview" class="tips-split-list"></ul>
+      <p class="group-help">El reparto se guarda en el corte. Este cálculo no registra una salida de dinero.</p>
+      <p id="tips-split-error" class="form-error" role="alert" hidden></p>
+      <button id="tips-save-split" type="submit" class="primary-button">Guardar reparto</button>
+    </form>
+  </dialog>
+
   <dialog id="cash-close-dialog" class="modal cash-modal" aria-labelledby="cash-close-title">
     <div class="modal-heading"><div><p class="eyebrow">CIERRE DEL TURNO</p><h2 id="cash-close-title">Corte de Caja</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar corte">×</button></div>
     <p id="cash-close-note" class="modal-description"></p>
     <dl id="cash-summary" class="cash-summary"></dl>
     <details class="cash-expenses"><summary id="cash-expenses-title">Conceptos de gastos</summary><ul id="cash-expenses-list"></ul></details>
-    <p class="group-help">Al cerrar, se guardará este corte y la caja quedará en cero. Los pedidos pendientes podrán cobrarse en el siguiente turno.</p>
+    <section id="cash-close-tips" class="cash-cut-tips" aria-label="Reparto de propinas"></section>
+    <button id="cash-close-edit-tips" type="button" class="text-button">Configurar propinas y reparto</button>
+    <p class="group-help">Al cerrar, se guardará el corte y se abrirá la impresión de su ticket. La caja quedará en cero; los pedidos pendientes podrán cobrarse en el siguiente turno.</p>
     <p id="cash-close-error" class="form-error" role="alert" hidden></p>
     <button id="close-shift" type="button" class="primary-button">Cerrar Turno</button>
   </dialog>

@@ -3,7 +3,7 @@ globalThis.AmorStorage = (() => {
   'use strict';
   const KEY = 'amor-amor-pos:expediente:v2';
   const LEGACY_KEY = 'amor-amor-pos:borrador:v1';
-  const vacio = () => ({ version: 2, revision: 0, siguienteNumero: 1, pedidos: [], borrador: { etiqueta: '', partidas: [] }, adicion: null, caja: AmorCash.cajaVacia(), historialCortes: [], colaOculta: false, guardadoEn: null });
+  const vacio = () => ({ version: 2, revision: 0, siguienteNumero: 1, siguienteDelivery: 1, pedidos: [], borrador: { etiqueta: '', partidas: [] }, adicion: null, caja: AmorCash.cajaVacia(), historialCortes: [], colaOculta: false, guardadoEn: null });
   const copia = value => JSON.parse(JSON.stringify(value));
   const fechaValida = valor => typeof valor === 'string' && Number.isFinite(Date.parse(valor));
   function validarPartida(partida) {
@@ -49,6 +49,7 @@ globalThis.AmorStorage = (() => {
     }
     state.siguienteNumero = Math.max(1, ...numeros) + (numeros.size ? 1 : 0);
     if (Number.isSafeInteger(raw.siguienteNumero)) state.siguienteNumero = Math.max(state.siguienteNumero, raw.siguienteNumero);
+    state.siguienteDelivery = AmorOrders.siguienteDelivery(state.pedidos, raw.siguienteDelivery === undefined ? 1 : raw.siguienteDelivery);
     state.colaOculta = !!state.colaOculta;
     // Los expedientes anteriores conservan sus ventas; empiezan sin turno activo.
     state.caja = AmorCash.normalizarCaja(state.caja);
@@ -78,9 +79,26 @@ globalThis.AmorStorage = (() => {
   }
   function guardarExpediente(state) {
     const existing = localStorage.getItem(KEY);
-    const revision = existing === null ? 0 : normalizar(JSON.parse(existing)).revision;
-    if (revision !== state.revision) throw new Error('El expediente cambió en otra pestaña. Recarga para continuar.');
+    const previo = existing === null ? vacio() : normalizar(JSON.parse(existing));
+    if (previo.revision !== state.revision) throw new Error('El expediente cambió en otra pestaña. Recarga para continuar.');
     const next = normalizar(state);
+    next.siguienteDelivery = Math.max(next.siguienteDelivery, previo.siguienteDelivery);
+    const anteriores = new Map(previo.pedidos.map(pedido => [pedido.id, pedido]));
+    for (const pedido of next.pedidos) {
+      const anterior = anteriores.get(pedido.id);
+      // Las etiquetas antiguas repetidas siguen siendo legibles y guardables.
+      if (anterior && anterior.etiqueta === pedido.etiqueta) continue;
+      const ocupado = AmorOrders.pedidoConEtiqueta(previo.pedidos, pedido.etiqueta, pedido.id) ||
+        AmorOrders.pedidoConEtiqueta(next.pedidos, pedido.etiqueta, pedido.id);
+      if (ocupado) throw new Error(`La etiqueta ${pedido.etiqueta} ya tiene un pedido abierto (N° ${ocupado.numero}).`);
+      const delivery = AmorOrders.numeroDelivery(pedido.etiqueta);
+      if (delivery !== null) {
+        const repetido = [...previo.pedidos, ...next.pedidos].some(item => item.id !== pedido.id && AmorOrders.numeroDelivery(item.etiqueta) === delivery);
+        if (repetido || (!anterior && delivery < previo.siguienteDelivery)) {
+          throw new Error(`Delivery #${delivery} ya fue utilizado. Selecciona Delivery para asignar el siguiente número.`);
+        }
+      }
+    }
     next.revision++;
     next.guardadoEn = new Date().toISOString();
     // Si setItem falla, el estado anterior permanece íntegro y la venta no se confirma.

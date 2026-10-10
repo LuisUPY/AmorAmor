@@ -3,8 +3,9 @@ globalThis.AmorCash = (() => {
   'use strict';
   const metodos = Object.freeze(['efectivo', 'tarjeta']);
   const clavesResumen = Object.freeze(['fondoInicialCentavos', 'ventasEfectivoCentavos', 'gastosExtrasCentavos', 'efectivoEsperadoCentavos', 'ventasTarjetaCentavos', 'totalVentasCentavos']);
+  const clavesResumenPropinas = Object.freeze(['propinasEfectivoCentavos', 'propinasTarjetaCentavos', 'totalPropinasCentavos']);
   const copia = value => JSON.parse(JSON.stringify(value));
-  const cajaVacia = () => ({ abierta: false, turnoId: null, abiertoEn: null, fondoInicialCentavos: 0, gastosDelDia: [], pagos: [] });
+  const cajaVacia = () => ({ abierta: false, turnoId: null, abiertoEn: null, fondoInicialCentavos: 0, gastosDelDia: [], pagos: [], propinas: [], repartoPropinas: null });
   const idValido = id => typeof id === 'string' && !!id.trim() && id.length <= 200;
   const fechaValida = fecha => typeof fecha === 'string' && Number.isFinite(Date.parse(fecha));
   const entero = valor => Number.isSafeInteger(valor) && valor >= 0;
@@ -76,6 +77,56 @@ globalThis.AmorCash = (() => {
     }
     return resultado;
   }
+  function normalizarRepartoPropinas(raw) {
+    if (raw === null) return null;
+    if (!raw || typeof raw !== 'object') throw new Error('Configuración de reparto de propinas inválida.');
+    if (raw.tipo === 'igual') {
+      if (!Number.isInteger(raw.personas) || raw.personas < 1 || raw.personas > 50) throw new Error('El reparto debe incluir entre 1 y 50 personas.');
+      return { tipo: 'igual', personas: raw.personas };
+    }
+    if (raw.tipo !== 'porcentaje' || !Array.isArray(raw.personas) || !raw.personas.length || raw.personas.length > 50) throw new Error('El reparto debe incluir entre 1 y 50 personas.');
+    const nombres = new Set();
+    let porcentajeTotal = 0;
+    const personas = raw.personas.map(persona => {
+      if (!persona || typeof persona.nombre !== 'string' || !persona.nombre.trim() || persona.nombre.trim().length > 200) throw new Error('Escribe el nombre de cada persona para repartir las propinas.');
+      const nombre = persona.nombre.trim();
+      const clave = nombre.normalize('NFKC').toLocaleLowerCase('es');
+      if (nombres.has(clave)) throw new Error('Los nombres del reparto de propinas deben ser distintos.');
+      nombres.add(clave);
+      const porcentaje = persona.porcentaje;
+      const centesimas = Math.round(porcentaje * 100);
+      if (typeof porcentaje !== 'number' || !Number.isFinite(porcentaje) || porcentaje < 0 || porcentaje > 100 || centesimas / 100 !== porcentaje) throw new Error('Cada porcentaje debe estar entre 0 y 100, con hasta dos decimales.');
+      porcentajeTotal += centesimas;
+      return { nombre, porcentaje };
+    });
+    if (porcentajeTotal !== 10000) throw new Error('Los porcentajes del reparto de propinas deben sumar 100%.');
+    return { tipo: 'porcentaje', personas };
+  }
+  function resumirPropinasSinValidar(turno) {
+    let efectivoCentavos = 0, tarjetaCentavos = 0;
+    for (const propina of turno.propinas) {
+      if (propina.metodo === 'efectivo') efectivoCentavos = sumar(efectivoCentavos, propina.montoCentavos);
+      else tarjetaCentavos = sumar(tarjetaCentavos, propina.montoCentavos);
+    }
+    const totalCentavos = sumar(efectivoCentavos, tarjetaCentavos);
+    const config = turno.repartoPropinas;
+    let reparto = [];
+    if (config?.tipo === 'igual') {
+      const base = Math.floor(totalCentavos / config.personas), resto = totalCentavos % config.personas;
+      reparto = Array.from({ length: config.personas }, (_, index) => ({ nombre: `Persona ${index + 1}`, montoCentavos: base + (index < resto ? 1 : 0) }));
+    } else if (config?.tipo === 'porcentaje') {
+      // Multiplicar con BigInt evita perder centavos si el total acumulado es muy alto.
+      const cuotas = config.personas.map((persona, index) => {
+        const producto = BigInt(totalCentavos) * BigInt(Math.round(persona.porcentaje * 100));
+        return { index, resto: Number(producto % 10000n), montoCentavos: Number(producto / 10000n) };
+      });
+      const faltantes = totalCentavos - cuotas.reduce((total, cuota) => sumar(total, cuota.montoCentavos), 0);
+      const prioridad = cuotas.slice().sort((a, b) => b.resto - a.resto || a.index - b.index);
+      for (let index = 0; index < faltantes; index++) prioridad[index].montoCentavos++;
+      reparto = config.personas.map((persona, index) => ({ nombre: persona.nombre, porcentaje: persona.porcentaje, montoCentavos: cuotas[index].montoCentavos }));
+    }
+    return { totalCentavos, efectivoCentavos, tarjetaCentavos, reparto, configurado: config !== null };
+  }
   function resumenSinValidar(caja) {
     let ventasEfectivoCentavos = 0, ventasTarjetaCentavos = 0, gastosExtrasCentavos = 0;
     for (const pago of caja.pagos) {
@@ -83,12 +134,15 @@ globalThis.AmorCash = (() => {
       ventasTarjetaCentavos = sumar(ventasTarjetaCentavos, pago.montoTarjetaCentavos);
     }
     for (const gasto of caja.gastosDelDia) gastosExtrasCentavos = sumar(gastosExtrasCentavos, gasto.montoCentavos);
-    const efectivoDisponible = sumar(caja.fondoInicialCentavos, ventasEfectivoCentavos);
+    const propinas = resumirPropinasSinValidar(caja);
+    const efectivoDisponible = sumar(sumar(caja.fondoInicialCentavos, ventasEfectivoCentavos), propinas.efectivoCentavos);
     if (gastosExtrasCentavos > efectivoDisponible) throw new Error('Los gastos exceden el efectivo disponible en caja.');
     return {
       fondoInicialCentavos: caja.fondoInicialCentavos, ventasEfectivoCentavos, gastosExtrasCentavos,
       efectivoEsperadoCentavos: efectivoDisponible - gastosExtrasCentavos, ventasTarjetaCentavos,
-      totalVentasCentavos: sumar(ventasEfectivoCentavos, ventasTarjetaCentavos)
+      totalVentasCentavos: sumar(ventasEfectivoCentavos, ventasTarjetaCentavos),
+      propinasEfectivoCentavos: propinas.efectivoCentavos, propinasTarjetaCentavos: propinas.tarjetaCentavos,
+      totalPropinasCentavos: propinas.totalCentavos
     };
   }
   function normalizarCaja(raw) {
@@ -96,8 +150,11 @@ globalThis.AmorCash = (() => {
     if (raw === undefined) return cajaVacia();
     if (!raw || typeof raw !== 'object' || typeof raw.abierta !== 'boolean' || !entero(raw.fondoInicialCentavos) ||
       !Array.isArray(raw.gastosDelDia) || !Array.isArray(raw.pagos)) throw new Error('Estado de caja inválido.');
+    const propinas = Object.hasOwn(raw, 'propinas') ? raw.propinas : [];
+    if (!Array.isArray(propinas)) throw new Error('Registro de propinas inválido.');
+    const repartoPropinas = normalizarRepartoPropinas(Object.hasOwn(raw, 'repartoPropinas') ? raw.repartoPropinas : null);
     if (!raw.abierta) {
-      if (raw.turnoId !== null || raw.abiertoEn !== null || raw.fondoInicialCentavos !== 0 || raw.gastosDelDia.length || raw.pagos.length) throw new Error('La caja cerrada debe estar en cero.');
+      if (raw.turnoId !== null || raw.abiertoEn !== null || raw.fondoInicialCentavos !== 0 || raw.gastosDelDia.length || raw.pagos.length || propinas.length || repartoPropinas !== null) throw new Error('La caja cerrada debe estar en cero.');
       return cajaVacia();
     }
     if (!idValido(raw.turnoId) || !fechaValida(raw.abiertoEn)) throw new Error('Apertura de caja inválida.');
@@ -109,6 +166,13 @@ globalThis.AmorCash = (() => {
         !fechaValida(gasto.fecha) || Date.parse(gasto.fecha) < fechaApertura) throw new Error('Gasto de caja inválido.');
       ids.add(gasto.id);
     }
+    const propinasNormalizadas = propinas.map(propina => {
+      if (!propina || !idValido(propina.id) || ids.has(propina.id) || !entero(propina.montoCentavos) ||
+        propina.montoCentavos < 1 || propina.montoCentavos > 99999999 || !metodos.includes(propina.metodo) ||
+        !fechaValida(propina.fecha) || Date.parse(propina.fecha) < fechaApertura) throw new Error('Propina de caja inválida.');
+      ids.add(propina.id);
+      return { id: propina.id, montoCentavos: propina.montoCentavos, metodo: propina.metodo, fecha: propina.fecha };
+    });
     const pagos = copia(raw.pagos);
     for (const pago of pagos) {
       if (!pago || !idValido(pago.id) || ids.has(pago.id) || !idValido(pago.pedidoId) || !entero(pago.importeCentavos) ||
@@ -136,7 +200,7 @@ globalThis.AmorCash = (() => {
       }
     }
     const caja = { abierta: true, turnoId: raw.turnoId, abiertoEn: raw.abiertoEn, fondoInicialCentavos: raw.fondoInicialCentavos,
-      gastosDelDia: copia(raw.gastosDelDia), pagos };
+      gastosDelDia: copia(raw.gastosDelDia), pagos, propinas: propinasNormalizadas, repartoPropinas };
     resumenSinValidar(caja);
     return caja;
   }
@@ -166,6 +230,23 @@ globalThis.AmorCash = (() => {
       montoCentavos, concepto: concepto.trim(), fecha: fechaDelTurno(resultado, fecha) });
     return normalizarCaja(resultado);
   }
+  function registrarPropina(caja, monto, metodo, fecha = new Date().toISOString()) {
+    const resultado = exigirAbierta(caja);
+    const montoCentavos = montoACentavos(monto);
+    if (!metodos.includes(metodo)) throw new Error('Selecciona Efectivo o Tarjeta/Transferencia para la propina.');
+    resultado.propinas.push({ id: `${resultado.turnoId}-propina-${resultado.propinas.length + 1}`,
+      montoCentavos, metodo, fecha: fechaDelTurno(resultado, fecha) });
+    return normalizarCaja(resultado);
+  }
+  function configurarRepartoPropinas(caja, config) {
+    const resultado = exigirAbierta(caja);
+    resultado.repartoPropinas = normalizarRepartoPropinas(config);
+    return resultado;
+  }
+  function resumirPropinas(cajaOCorte) {
+    const turno = cajaOCorte && Object.hasOwn(cajaOCorte, 'cerradoEn') ? normalizarCorte(cajaOCorte) : normalizarCaja(cajaOCorte);
+    return resumirPropinasSinValidar(turno);
+  }
   function resumirCaja(caja, pedidos) {
     const actual = normalizarCaja(caja);
     const resumen = resumenSinValidar(actual);
@@ -193,16 +274,28 @@ globalThis.AmorCash = (() => {
       Date.parse(raw.cerradoEn) < Date.parse(raw.abiertoEn)) throw new Error('Corte de caja inválido.');
     const caja = normalizarCaja({ ...raw, abierta: true });
     if (caja.gastosDelDia.some(gasto => Date.parse(gasto.fecha) > Date.parse(raw.cerradoEn)) ||
-      caja.pagos.some(pago => Date.parse(pago.fecha) > Date.parse(raw.cerradoEn))) throw new Error('El corte contiene movimientos posteriores al cierre.');
+      caja.pagos.some(pago => Date.parse(pago.fecha) > Date.parse(raw.cerradoEn)) ||
+      caja.propinas.some(propina => Date.parse(propina.fecha) > Date.parse(raw.cerradoEn))) throw new Error('El corte contiene movimientos posteriores al cierre.');
     const resumen = resumenSinValidar(caja);
-    if (clavesResumen.some(clave => raw[clave] !== resumen[clave])) throw new Error('Las sumas del corte de caja son inconsistentes.');
+    if (clavesResumen.some(clave => raw[clave] !== resumen[clave]) ||
+      clavesResumenPropinas.some(clave => (Object.hasOwn(raw, clave) ? raw[clave] : 0) !== resumen[clave])) throw new Error('Las sumas del corte de caja son inconsistentes.');
+    const distribucionPropinas = resumirPropinasSinValidar(caja).reparto;
+    const guardada = Object.hasOwn(raw, 'distribucionPropinas') ? raw.distribucionPropinas : [];
+    if (!Array.isArray(guardada) || guardada.length !== distribucionPropinas.length || guardada.some((persona, index) => {
+      const esperada = distribucionPropinas[index];
+      return !persona || persona.nombre !== esperada.nombre || !entero(persona.montoCentavos) || persona.montoCentavos !== esperada.montoCentavos ||
+        Object.hasOwn(persona, 'porcentaje') !== Object.hasOwn(esperada, 'porcentaje') || persona.porcentaje !== esperada.porcentaje;
+    })) throw new Error('El reparto guardado de propinas es inconsistente.');
     return { id: caja.turnoId, turnoId: caja.turnoId, abiertoEn: caja.abiertoEn, cerradoEn: raw.cerradoEn,
-      gastosDelDia: caja.gastosDelDia, pagos: caja.pagos, ...resumen };
+      gastosDelDia: caja.gastosDelDia, pagos: caja.pagos, propinas: caja.propinas, repartoPropinas: caja.repartoPropinas,
+      distribucionPropinas, ...resumen };
   }
   function cerrarCaja(caja, fecha = new Date().toISOString(), pedidos) {
     const actual = exigirAbierta(caja);
     const corte = normalizarCorte({ id: actual.turnoId, turnoId: actual.turnoId, abiertoEn: actual.abiertoEn,
-      cerradoEn: fechaDelTurno(actual, fecha), gastosDelDia: actual.gastosDelDia, pagos: actual.pagos, ...resumirCaja(actual, pedidos) });
+      cerradoEn: fechaDelTurno(actual, fecha), gastosDelDia: actual.gastosDelDia, pagos: actual.pagos,
+      propinas: actual.propinas, repartoPropinas: actual.repartoPropinas,
+      distribucionPropinas: resumirPropinasSinValidar(actual).reparto, ...resumirCaja(actual, pedidos) });
     return { caja: cajaVacia(), corte };
   }
   function importePartida(partida) {
@@ -293,6 +386,7 @@ globalThis.AmorCash = (() => {
     }
     return true;
   }
-  return Object.freeze({ metodos, montoACentavos, validarPago, normalizarPedidoPagos, cajaVacia, normalizarCaja, abrirCaja, registrarGasto, resumirCaja,
+  return Object.freeze({ metodos, montoACentavos, validarPago, normalizarPedidoPagos, cajaVacia, normalizarCaja, abrirCaja, registrarGasto,
+    registrarPropina, configurarRepartoPropinas, resumirPropinas, resumirCaja,
     normalizarCorte, cerrarCaja, cobrarPartidas, validarVinculos });
 })();

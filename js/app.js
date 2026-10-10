@@ -58,8 +58,20 @@
     actualizarPreajustes();
   }
   function actualizarPreajustes() {
-    for (const preset of $('order-label-presets').children) preset.setAttribute('aria-pressed', String(preset.dataset.etiqueta === state.preajuste));
-    $('order-label').maxLength = state.preajuste ? 60 - state.preajuste.length - 3 : 60;
+    const delivery = `Delivery #${expediente.siguienteDelivery}`;
+    for (const preset of $('order-label-presets').children) {
+      const etiqueta = preset.dataset.etiqueta;
+      preset.setAttribute('aria-pressed', String(etiqueta === state.preajuste));
+      preset.textContent = etiqueta === 'Delivery' ? delivery : etiqueta || 'Personalizado';
+      const ocupado = etiqueta.startsWith('Mesa ') ? AmorOrders.pedidoConEtiqueta(expediente.pedidos, etiqueta) : null;
+      preset.disabled = !!ocupado;
+      const descripcion = ocupado ? `${etiqueta} está ocupada por el pedido N° ${ocupado.numero}. Ábrelo en Pedidos abiertos para añadir productos.` : '';
+      preset.title = descripcion;
+      if (descripcion) preset.setAttribute('aria-description', descripcion);
+      else preset.removeAttribute('aria-description');
+    }
+    const etiqueta = state.preajuste === 'Delivery' ? delivery : state.preajuste;
+    $('order-label').maxLength = etiqueta ? 60 - etiqueta.length - 3 : 60;
   }
   function renderPreajustes() {
     $('order-label-presets').replaceChildren(...[...Array.from({ length: 8 }, (_, i) => `Mesa ${i + 1}`), 'Delivery', ''].map(etiqueta => {
@@ -70,6 +82,7 @@
         saveDraft();
       });
       preset.dataset.etiqueta = etiqueta;
+      preset.setAttribute('aria-label', etiqueta || 'Personalizado');
       return preset;
     }));
     actualizarPreajustes();
@@ -331,6 +344,7 @@
     renderOrder(); saveDraft();
   }
   function renderOrder() {
+    actualizarPreajustes();
     const destino = expediente.pedidos.find(pedido => pedido.id === state.pedidoDestinoId);
     $('order-title').textContent = destino ? `Añadir a ${destino.etiqueta || `pedido N° ${destino.numero}`}` : 'Pedido actual';
     $('order-label-controls').hidden = !!destino;
@@ -424,8 +438,11 @@
   $('confirm-cancel-addition').addEventListener('click', cancelarAdicion);
   $('review-order').addEventListener('click', () => {
     const destino = expediente.pedidos.find(p => p.id === state.pedidoDestinoId);
+    let etiqueta;
+    try { etiqueta = destino ? destino.etiqueta : AmorOrders.resolverEtiqueta(etiquetaActual(), expediente.pedidos, expediente.siguienteDelivery); }
+    catch (error) { notify(error.message); return; }
     $('review-title').textContent = destino ? 'Revisa los productos nuevos' : 'Revisa tu pedido';
-    $('review-label').textContent = destino ? `${destino.etiqueta || 'Sin etiqueta'} · Pedido N° ${destino.numero}` : etiquetaActual().trim() || 'Pedido sin etiqueta';
+    $('review-label').textContent = destino ? `${destino.etiqueta || 'Sin etiqueta'} · Pedido N° ${destino.numero}` : etiqueta || 'Pedido sin etiqueta';
     $('review-total-label').textContent = destino ? 'Total a añadir' : 'Total del pedido';
     $('review-print-note').textContent = destino ? 'Se sumarán al pedido y se imprimirán comandas solo de estos productos nuevos.' : 'Se guardará en este dispositivo y se abrirá la impresión de comandas para Cocina y Barra.';
     $('confirm-order').textContent = destino ? 'Confirmar adición ✓' : 'Confirmar pedido ✓';
@@ -451,7 +468,8 @@
         }
         return;
       }
-      const pedido = AmorOrders.nuevoPedido(state.partidas, etiquetaActual(), next.siguienteNumero);
+      const etiqueta = AmorOrders.resolverEtiqueta(etiquetaActual(), next.pedidos, next.siguienteDelivery);
+      const pedido = AmorOrders.nuevoPedido(state.partidas, etiqueta, next.siguienteNumero);
       next.pedidos.push(pedido); next.siguienteNumero++;
       next.borrador = { etiqueta: '', partidas: [] };
       if (commit(next)) {
