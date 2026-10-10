@@ -26,6 +26,7 @@
     <a class="brand" href="./" aria-label="Amor y Amor, inicio"><img src="assets/img/logo.png" alt="Amor & Amor Cafetería" width="180" height="72"></a>
     <div class="header-cash">
       <p id="cash-status" role="status">Caja cerrada · Abre un turno para cobrar</p>
+      <button id="history-button" class="header-history" type="button">Historial</button>
       <details id="cash-options" class="options-dropdown">
         <summary>Ver opciones de caja</summary>
         <nav class="options-panel" aria-label="Control de caja">
@@ -41,7 +42,6 @@
       <summary>Opciones</summary>
       <nav class="options-panel" aria-label="Opciones de la aplicación">
         <a href="assets/Menu%20Amor%20%26%20Amor.pdf" target="_blank" rel="noopener">Menú ↗</a>
-        <button id="history-button" type="button">Historial</button>
         <button id="load-expediente" type="button">Cargar expediente</button>
         <button id="save-expediente" type="button">Guardar expediente</button>
         <button id="restart-app" type="button">Reiniciar aplicación</button>
@@ -112,6 +112,7 @@
 
   <dialog id="history-dialog" class="modal history-modal" aria-labelledby="history-title">
     <div class="modal-heading"><div><p class="eyebrow">VENTAS DEL RESTAURANTE</p><h2 id="history-title">Historial de pedidos</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar historial">×</button></div>
+    <button id="history-cuts-button" type="button" class="text-button">Ver historial de cortes de caja →</button>
     <div id="history-layout" class="history-layout"><aside class="history-sidebar" aria-labelledby="history-days-title"><h3 id="history-days-title">Días registrados</h3><div id="history-days" class="history-days" role="group" aria-labelledby="history-days-title"></div></aside>
       <section id="history-detail" class="history-detail" aria-labelledby="history-day-title" tabindex="0"><p class="eyebrow">CORTE DEL DÍA</p><h3 id="history-day-title" aria-live="polite"></h3><p class="history-note">Ventas por fecha de pago de cada producto, en horario de Mérida.</p><div id="history-summary" class="history-summary"></div><div id="history-category-kpis" class="history-category-kpis"></div><p id="history-extra-note" class="history-note"></p><div class="history-orders-heading"><h3>Pedidos del día</h3><span id="history-order-count"></span></div><div id="history-orders" class="history-orders"></div></section>
     </div><p id="history-empty" class="empty-state" hidden>Aún no hay pedidos registrados.</p>
@@ -123,7 +124,28 @@
   </dialog>
 
   <dialog id="ticket-dialog" class="modal ticket-modal" aria-labelledby="ticket-title">
-    <div class="modal-heading"><div><p class="eyebrow">SEGUIMIENTO DEL PEDIDO</p><h2 id="ticket-title"></h2></div><button type="button" class="close-button" data-close aria-label="Cerrar pedido">×</button></div><p id="ticket-meta" class="modal-description"></p><div class="ticket-tools"><button id="add-to-order" type="button" class="secondary-button">Añadir productos +</button><button id="print-bill" type="button" class="secondary-button">Imprimir cuenta</button></div><div id="ticket-lines" class="ticket-lines"></div><div class="review-total"><span>Total del pedido</span><strong id="ticket-total"></strong></div><p id="ticket-balance" class="ticket-balance"></p><div class="ticket-actions"><button id="prepare-all" type="button" class="secondary-button">Preparar todo</button><button id="reprint-order" type="button" class="secondary-button">Reimprimir comandas</button><button id="pay-all" type="button" class="primary-button">Cobrar pendientes</button></div>
+    <div class="modal-heading"><div><p class="eyebrow">DETALLE DEL PEDIDO</p><h2 id="ticket-title"></h2></div><button type="button" class="close-button" data-close aria-label="Cerrar pedido">×</button></div>
+    <p id="ticket-meta" class="modal-description"></p>
+    <p id="ticket-status" class="ticket-status"></p>
+    <div class="ticket-tools"><button id="add-to-order" type="button" class="secondary-button">Añadir productos +</button></div>
+    <div id="ticket-lines" class="ticket-lines"></div>
+    <details id="ticket-removed" class="ticket-removed" hidden><summary id="ticket-removed-title">Productos eliminados</summary><div id="ticket-removed-lines"></div></details>
+    <div class="review-total"><span>Total del pedido</span><strong id="ticket-total"></strong></div>
+    <p id="ticket-balance" class="ticket-balance"></p>
+    <div class="ticket-reprints" role="group" aria-label="Reimpresiones del pedido">
+      <button id="reprint-kitchen" type="button" class="secondary-button">Reimprimir Comanda Cocina</button>
+      <button id="reprint-bar" type="button" class="secondary-button">Reimprimir Comanda Barra</button>
+      <button id="print-bill" type="button" class="secondary-button">Reimprimir Cuenta</button>
+    </div>
+    <div class="ticket-actions"><button id="prepare-all" type="button" class="secondary-button">Preparar todo</button><button id="reprint-order" type="button" class="secondary-button">Reimprimir ambas áreas</button><button id="pay-all" type="button" class="primary-button">Cobrar pendientes</button></div>
+  </dialog>
+
+  <dialog id="remove-item-dialog" class="modal small-modal" aria-labelledby="remove-item-title" aria-describedby="remove-item-description">
+    <div class="modal-heading"><h2 id="remove-item-title">¿Eliminar este producto?</h2><button type="button" class="close-button" data-close aria-label="Cerrar eliminación">×</button></div>
+    <p id="remove-item-description" class="modal-description"></p>
+    <p class="group-help">Si la comanda ya se envió, avisa a Cocina o Barra de la cancelación.</p>
+    <p id="remove-item-error" class="form-error" role="alert" hidden></p>
+    <div class="confirm-actions"><button type="button" class="secondary-button" data-close autofocus>Conservar producto</button><button id="confirm-remove-item" type="button" class="primary-button danger-button">Eliminar producto</button></div>
   </dialog>
 
   <dialog id="cash-open-dialog" class="modal small-modal cash-modal" aria-labelledby="cash-open-title" aria-describedby="cash-open-note">
@@ -195,12 +217,15 @@
   <dialog id="cash-close-dialog" class="modal cash-modal" aria-labelledby="cash-close-title">
     <div class="modal-heading"><div><p class="eyebrow">CIERRE DEL TURNO</p><h2 id="cash-close-title">Corte de Caja</h2></div><button type="button" class="close-button" data-close aria-label="Cerrar corte">×</button></div>
     <p id="cash-close-note" class="modal-description"></p>
+    <label class="cash-field" for="cash-daily-tip">Propina del Día ($)<input id="cash-daily-tip" type="number" min="0" max="999999.99" step="0.01" inputmode="decimal" value="0" aria-describedby="cash-daily-tip-help"></label>
+    <p id="cash-daily-tip-help" class="group-help">Total de propinas del turno, incluidas las ya registradas. La diferencia se registra como propina en efectivo al cerrar. Las propinas de tarjeta se capturan en Propinas y reparto.</p>
     <dl id="cash-summary" class="cash-summary"></dl>
     <details class="cash-expenses"><summary id="cash-expenses-title">Conceptos de gastos</summary><ul id="cash-expenses-list"></ul></details>
     <section id="cash-close-tips" class="cash-cut-tips" aria-label="Reparto de propinas"></section>
     <button id="cash-close-edit-tips" type="button" class="text-button">Configurar propinas y reparto</button>
-    <p class="group-help">Al cerrar, se guardará el corte y se abrirá la impresión de su ticket. La caja quedará en cero; los pedidos pendientes podrán cobrarse en el siguiente turno.</p>
+    <p class="group-help">Imprimir Corte genera una vista previa del turno abierto. Al cerrar, se guardará el corte con la propina y se abrirá su impresión final. Los pedidos pendientes podrán cobrarse en el siguiente turno.</p>
     <p id="cash-close-error" class="form-error" role="alert" hidden></p>
+    <button id="print-current-cut" type="button" class="secondary-button">Imprimir Corte</button>
     <button id="close-shift" type="button" class="primary-button">Cerrar Turno</button>
   </dialog>
 

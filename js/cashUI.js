@@ -64,6 +64,7 @@ globalThis.AmorCashUI = (() => {
     let pendingPayment = null;
     let expenseShiftId = null;
     let closeShiftId = null;
+    let dailyTipEdited = false;
     let tipsShiftId = null;
 
     function importesPago() {
@@ -130,20 +131,41 @@ globalThis.AmorCashUI = (() => {
         else mostrarPago();
       } catch (error) { pendingPayment = null; notify(error.message); }
     }
+    function cajaParaCorte(fecha = new Date().toISOString()) {
+      const { caja } = getState();
+      if (!caja.abierta || caja.turnoId !== closeShiftId) throw new Error('El turno cambió. Vuelve a abrir su corte.');
+      const input = $('cash-daily-tip');
+      if (input.validity.badInput || input.value === '') throw new Error('Captura la Propina del Día; usa 0 si no hubo propinas.');
+      return AmorCash.completarPropinaDelDia(caja, input.value, fecha);
+    }
     function renderCorte() {
       const { caja, pedidos } = getState();
-      $('close-shift').disabled = !caja.abierta || caja.turnoId !== closeShiftId;
+      const disponible = caja.abierta && caja.turnoId === closeShiftId;
+      $('close-shift').disabled = !disponible;
+      $('print-current-cut').disabled = !disponible;
+      $('cash-daily-tip').disabled = !disponible;
+      if (!dailyTipEdited) $('cash-daily-tip').value = (AmorCash.resumirPropinas(caja).totalCentavos / 100).toFixed(2);
       $('cash-close-note').textContent = caja.abierta ? `Turno abierto el ${horario.format(new Date(caja.abiertoEn))}. Importes en MXN.` : 'La caja está cerrada.';
-      resumenEn($('cash-summary'), AmorCash.resumirCaja(caja, pedidos));
+      let prevista = caja;
+      try {
+        prevista = cajaParaCorte();
+        $('cash-close-error').hidden = true;
+      } catch (error) {
+        mostrarError('cash-close-error', error.message);
+        $('close-shift').disabled = true;
+        $('print-current-cut').disabled = true;
+      }
+      resumenEn($('cash-summary'), AmorCash.resumirCaja(prevista, pedidos));
       $('cash-expenses-title').textContent = `Conceptos de gastos (${caja.gastosDelDia.length})`;
       gastosEn($('cash-expenses-list'), caja.gastosDelDia);
-      repartoEn($('cash-close-tips'), caja);
+      repartoEn($('cash-close-tips'), prevista);
     }
     function renderHistorial() {
       const cortes = [...getState().historialCortes].reverse();
       $('cash-history-empty').hidden = cortes.length > 0;
       $('cash-history-list').replaceChildren(...cortes.map(corte => {
-        const card = node('details', 'cash-saved-cut');
+        const card = node('article', 'cash-saved-cut');
+        const detail = node('details');
         const heading = node('summary', '', `${horario.format(new Date(corte.cerradoEn))} · Efectivo esperado: ${moneda(corte.efectivoEsperadoCentavos)}`);
         const period = node('p', 'modal-description', `Apertura: ${horario.format(new Date(corte.abiertoEn))}`);
         const summary = node('dl', 'cash-summary');
@@ -152,10 +174,11 @@ globalThis.AmorCashUI = (() => {
         const list = node('ul'); gastosEn(list, corte.gastosDelDia);
         gastos.append(node('summary', '', `Gastos (${corte.gastosDelDia.length})`), list);
         const propinas = node('section', 'cash-cut-tips'); repartoEn(propinas, corte);
-        const print = node('button', 'secondary-button print-cut-button', 'Imprimir corte');
+        const print = node('button', 'secondary-button print-cut-button', 'Reimprimir Corte');
         print.type = 'button'; print.dataset.corte = corte.id;
         print.addEventListener('click', () => AmorPrinting.imprimirCorte(corte).catch(error => notify(`No se abrió la impresión: ${error.message}`)));
-        card.append(heading, period, summary, gastos, propinas, print);
+        detail.append(heading, period, summary, gastos, propinas);
+        card.append(detail, print);
         return card;
       }));
     }
@@ -348,20 +371,35 @@ globalThis.AmorCashUI = (() => {
       const { caja } = getState();
       if (!caja.abierta) { notify('La caja está cerrada.'); return; }
       closeShiftId = caja.turnoId; $('cash-close-error').hidden = true;
+      dailyTipEdited = false;
       renderCorte(); $('cash-close-dialog').showModal();
+    });
+    $('cash-daily-tip').addEventListener('input', () => { dailyTipEdited = true; renderCorte(); });
+    $('print-current-cut').addEventListener('click', () => {
+      try {
+        const fecha = new Date().toISOString();
+        const { corte } = AmorCash.cerrarCaja(cajaParaCorte(fecha), fecha, getState().pedidos);
+        AmorPrinting.imprimirCorte(corte, { provisional: true }).catch(error => mostrarError('cash-close-error', `No se abrió la impresión: ${error.message}`));
+      } catch (error) { mostrarError('cash-close-error', error.message); }
     });
     $('close-shift').addEventListener('click', () => {
       try {
         const next = getState();
         if (next.caja.turnoId !== closeShiftId) throw new Error('El turno cambió. Vuelve a abrir su corte.');
-        const cierre = AmorCash.cerrarCaja(next.caja, undefined, next.pedidos);
+        const fecha = new Date().toISOString();
+        const cierre = AmorCash.cerrarCaja(cajaParaCorte(fecha), fecha, next.pedidos);
         next.historialCortes.push(cierre.corte); next.caja = cierre.caja;
         if (!commit(next)) throw new Error('No se guardó el corte. La caja sigue abierta.');
         $('cash-close-dialog').close(); notify('Turno cerrado y corte guardado');
         AmorPrinting.imprimirCorte(cierre.corte).catch(error => notify(`Corte guardado. No se abrió la impresión: ${error.message}. Puedes imprimirlo desde Cortes guardados.`));
       } catch (error) { mostrarError('cash-close-error', error.message); }
     });
-    $('cash-history-button').addEventListener('click', () => { renderHistorial(); $('cash-history-dialog').showModal(); });
+    function abrirHistorial() {
+      renderHistorial();
+      if (!$('cash-history-dialog').open) $('cash-history-dialog').showModal();
+    }
+    $('cash-history-button').addEventListener('click', abrirHistorial);
+    $('history-cuts-button').addEventListener('click', abrirHistorial);
     return Object.freeze({ renderAll, solicitarCobro, ofrecerApertura: mostrarApertura });
   }
   return Object.freeze({ iniciar });

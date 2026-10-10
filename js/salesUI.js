@@ -42,6 +42,7 @@ globalThis.AmorSalesUI = (() => {
     let selectedDay = null;
     let selectedLoadDay = null;
     let activeOrderId = null;
+    let pendingRemoval = null;
     let daysSignature = '';
 
     function linea(partida, pedido = null) {
@@ -60,11 +61,58 @@ globalThis.AmorSalesUI = (() => {
         const actions = node('div', 'line-state-actions');
         const prepare = button(partida.preparado ? 'Preparado ✓' : 'Marcar PREPARADO', 'secondary-button', () => cambiarEstado(pedido.id, partida.id, 'preparado'));
         const pay = button(partida.pagado ? 'Pagado ✓' : 'Cobrar producto', 'secondary-button', () => solicitarCobro(pedido.id, partida.id));
+        const remove = button('Eliminar producto', 'secondary-button remove-product-button', () => solicitarEliminacion(pedido.id, partida.id));
         prepare.disabled = partida.preparado; pay.disabled = partida.pagado;
-        actions.append(prepare, pay); content.append(actions);
+        remove.disabled = partida.pagado || !AmorOrders.estaAbierto(pedido);
+        if (partida.pagado) remove.title = 'Los productos ya cobrados no se pueden eliminar.';
+        actions.append(prepare, pay, remove); content.append(actions);
       }
       row.append(imagen(partida), content);
       return row;
+    }
+    function solicitarEliminacion(pedidoId, partidaId) {
+      const pedido = getState().pedidos.find(p => p.id === pedidoId);
+      const partida = pedido?.partidas.find(p => p.id === partidaId);
+      if (!partida || partida.pagado || !AmorOrders.estaAbierto(pedido)) { notify('Este producto ya no se puede eliminar.'); return; }
+      pendingRemoval = { pedidoId, partidaId };
+      const importe = partida.precioUnitarioCentavos * partida.cantidad;
+      $('remove-item-description').textContent = `Se eliminará la partida completa: ${partida.cantidad} × ${partida.nombre} (${dinero(importe / 100)}). El total quedará en ${dinero((pedido.totalCentavos - importe) / 100)}.${pedido.partidas.length === 1 ? ' Al ser el último producto, el pedido quedará CANCELADO y su mesa se liberará.' : ''}`;
+      $('remove-item-error').hidden = true;
+      if (!$('remove-item-dialog').open) $('remove-item-dialog').showModal();
+    }
+    function confirmarEliminacion() {
+      try {
+        if (!pendingRemoval) throw new Error('Vuelve a seleccionar el producto que quieres eliminar.');
+        const next = getState();
+        const index = next.pedidos.findIndex(p => p.id === pendingRemoval.pedidoId);
+        if (index < 0) throw new Error('No se encontró el pedido.');
+        const pedido = AmorOrders.eliminarPartida(next.pedidos[index], pendingRemoval.partidaId);
+        if (!AmorOrders.estaAbierto(pedido) && next.adicion?.pedidoId === pedido.id) {
+          if (next.adicion.partidas.length) throw new Error('Confirma o cancela la selección de productos nuevos antes de cerrar este pedido.');
+          next.adicion = null;
+        }
+        next.pedidos[index] = pedido;
+        if (!commit(next)) throw new Error('No se guardó la eliminación. El producto sigue en el pedido. Intenta de nuevo.');
+        $('remove-item-dialog').close();
+        notify(pedido.estado === 'CANCELADO' ? 'Pedido cancelado y mesa liberada' : 'Producto eliminado y total actualizado');
+      } catch (error) {
+        $('remove-item-error').textContent = error.message;
+        $('remove-item-error').hidden = false;
+      }
+    }
+    function renderEliminados(pedido) {
+      const eliminadas = pedido.partidasEliminadas || [];
+      $('ticket-removed').hidden = !eliminadas.length;
+      $('ticket-removed-title').textContent = `Productos eliminados (${eliminadas.length}) · No incluidos en el total`;
+      $('ticket-removed-lines').replaceChildren(...eliminadas.map(partida => {
+        const row = node('article', 'removed-product');
+        row.append(node('strong', '', `${partida.cantidad} × ${partida.nombre} · ${dinero(partida.precioUnitarioCentavos * partida.cantidad / 100)}`));
+        const opciones = resumenOpciones(partida);
+        if (opciones) row.append(node('p', 'line-options', opciones));
+        if (partida.nota) row.append(node('p', 'line-note', `Nota: ${partida.nota}`));
+        row.append(node('p', 'line-options', `Eliminado: ${horario.format(new Date(partida.eliminadoEn))}`));
+        return row;
+      }));
     }
     function cambiarEstado(pedidoId, partidaId, accion) {
       if (accion === 'pagado') { solicitarCobro(pedidoId, partidaId); return; }
@@ -84,11 +132,19 @@ globalThis.AmorSalesUI = (() => {
       if (!pedido) return;
       $('ticket-title').textContent = pedido.etiqueta || `Pedido N° ${pedido.numero}`;
       $('ticket-meta').textContent = `Pedido N° ${pedido.numero} · ${horario.format(new Date(pedido.creadoEn))}`;
+      $('ticket-status').textContent = `Estado: ${AmorOrders.estadoPedido(pedido)}`;
       $('ticket-lines').replaceChildren(...pedido.partidas.map(partida => linea(partida, pedido)));
+      if (!pedido.partidas.length) $('ticket-lines').append(node('p', 'empty-state', 'Pedido cancelado. Todos sus productos se eliminaron.'));
+      renderEliminados(pedido);
       $('ticket-total').textContent = dinero(pedido.totalCentavos / 100);
       $('prepare-all').disabled = pedido.partidas.every(partida => partida.preparado);
       $('pay-all').disabled = pedido.partidas.every(partida => partida.pagado);
       $('add-to-order').disabled = !AmorOrders.estaAbierto(pedido);
+      const { comandaAlimentos, comandaBebidas } = pedido.partidas.length ? AmorPrinting.separarComandas(pedido) : { comandaAlimentos: [], comandaBebidas: [] };
+      $('reprint-kitchen').disabled = !comandaAlimentos.length;
+      $('reprint-bar').disabled = !comandaBebidas.length;
+      $('reprint-order').disabled = !pedido.partidas.length;
+      $('print-bill').disabled = !pedido.partidas.length;
       const pagado = pedido.partidas.filter(p => p.pagado).reduce((total, p) => total + p.precioUnitarioCentavos * p.cantidad, 0);
       $('ticket-balance').textContent = `Abonado ${dinero(pagado / 100)} · Pendiente ${dinero((pedido.totalCentavos - pagado) / 100)}`;
     }
@@ -162,11 +218,13 @@ globalThis.AmorSalesUI = (() => {
       $('history-order-count').textContent = `${selected.pedidos.length} pedidos`;
       $('history-orders').replaceChildren(...selected.pedidos.map(pedido => {
         const card = node('article', 'history-order');
-        const title = node('div', 'history-order-heading');
-        title.append(button(`Pedido N° ${pedido.numero} ↗`, 'text-button', () => abrirPedido(pedido.id)), node('span', 'status-badge', pedido.estado), node('strong', '', dinero(pedido.totalCentavos / 100)));
-        card.append(title, node('p', 'history-order-label', pedido.etiqueta || 'Sin etiqueta'), ...pedido.partidas.map(partida => linea(partida)));
+        const open = button('', 'history-order-open', () => abrirPedido(pedido.id));
+        const title = node('span', 'history-order-heading');
+        title.append(node('span', 'text-button', `Pedido N° ${pedido.numero} ↗`), node('span', 'status-badge', pedido.estado), node('strong', '', dinero(pedido.totalCentavos / 100)));
+        open.append(title, node('span', 'history-order-label', pedido.etiqueta || 'Sin etiqueta'));
+        card.append(open);
         const cobrado = pedido.partidas.filter(p => p.pagado && fechaLocal(p.pagadoEn) === selected.fecha).reduce((sum, p) => sum + p.precioUnitarioCentavos * p.cantidad, 0);
-        card.append(node('p', 'history-order-note', `Pagado en este corte: ${dinero(cobrado / 100)}`));
+        open.append(node('span', 'history-order-note', `Pagado en este día: ${dinero(cobrado / 100)} · Ver detalle y reimpresiones`));
         return card;
       }));
       $('history-detail').scrollTop = 0;
@@ -199,6 +257,8 @@ globalThis.AmorSalesUI = (() => {
       if ($('ticket-dialog').open) renderTicket();
     }
     $('history-button').addEventListener('click', () => openHistory());
+    $('confirm-remove-item').addEventListener('click', confirmarEliminacion);
+    $('remove-item-dialog').addEventListener('close', () => { pendingRemoval = null; });
     $('load-expediente').addEventListener('click', openLoad);
     $('load-selected-day').addEventListener('click', () => {
       if (!selectedLoadDay) return;
@@ -215,6 +275,12 @@ globalThis.AmorSalesUI = (() => {
       const pedido = getState().pedidos.find(p => p.id === activeOrderId);
       if (pedido) AmorPrinting.imprimirCuenta(pedido).catch(error => notify(`No se abrió la impresión: ${error.message}`));
     });
+    for (const [id, imprimir] of [['reprint-kitchen', 'imprimirComandaCocina'], ['reprint-bar', 'imprimirComandaBarra']]) {
+      $(id).addEventListener('click', () => {
+        const pedido = getState().pedidos.find(p => p.id === activeOrderId);
+        if (pedido) AmorPrinting[imprimir](pedido).catch(error => notify(`No se abrió la impresión: ${error.message}`));
+      });
+    }
     $('add-to-order').addEventListener('click', () => agregarProductos(activeOrderId));
     $('toggle-queue').addEventListener('click', () => {
       const next = getState(); next.colaOculta = !next.colaOculta;

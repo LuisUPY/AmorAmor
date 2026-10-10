@@ -26,7 +26,7 @@ globalThis.AmorStorage = (() => {
     for (const pedido of state.pedidos) {
       if (!pedido || !Number.isSafeInteger(pedido.numero) || pedido.numero < 1 || numeros.has(pedido.numero) ||
         pedido.id !== `pedido-${pedido.numero}` || !fechaValida(pedido.creadoEn) || typeof pedido.etiqueta !== 'string' || pedido.etiqueta.length > 60 ||
-        !Array.isArray(pedido.partidas) || !pedido.partidas.length) throw new Error('Pedido inválido en el expediente.');
+        !Array.isArray(pedido.partidas) || (!pedido.partidas.length && !pedido.partidasEliminadas?.length)) throw new Error('Pedido inválido en el expediente.');
       numeros.add(pedido.numero);
       const ids = new Set();
       for (const partida of pedido.partidas) {
@@ -34,6 +34,18 @@ globalThis.AmorStorage = (() => {
         if (typeof partida.id !== 'string' || ids.has(partida.id) || typeof partida.pagado !== 'boolean' || typeof partida.preparado !== 'boolean' ||
           (partida.pagado && !fechaValida(partida.pagadoEn)) || (partida.preparado && !fechaValida(partida.preparadoEn))) throw new Error('Estado de producto inválido.');
         ids.add(partida.id);
+      }
+      if (pedido.partidasEliminadas !== undefined) {
+        if (!Array.isArray(pedido.partidasEliminadas)) throw new Error('Registro de productos eliminados inválido.');
+        for (const partida of pedido.partidasEliminadas) {
+          validarPartida(partida);
+          if (typeof partida.id !== 'string' || ids.has(partida.id) || partida.pagado !== false || partida.pagadoEn !== null ||
+            typeof partida.preparado !== 'boolean' || (partida.preparado && !fechaValida(partida.preparadoEn)) ||
+            !fechaValida(partida.eliminadoEn) || Date.parse(partida.eliminadoEn) < Date.parse(pedido.creadoEn) ||
+            (partida.preparado && Date.parse(partida.eliminadoEn) < Date.parse(partida.preparadoEn)) ||
+            ['montoEfectivo', 'montoTarjeta', 'metodoPago', 'turnoId'].some(key => Object.hasOwn(partida, key))) throw new Error('Producto eliminado inválido.');
+          ids.add(partida.id);
+        }
       }
       const total = AmorPOS.totalPedido(pedido.partidas);
       if (pedido.totalCentavos !== total) throw new Error('Total inconsistente en el expediente.');
@@ -87,7 +99,9 @@ globalThis.AmorStorage = (() => {
     for (const pedido of next.pedidos) {
       const anterior = anteriores.get(pedido.id);
       // Las etiquetas antiguas repetidas siguen siendo legibles y guardables.
-      if (anterior && anterior.etiqueta === pedido.etiqueta) continue;
+      const reabreMesa = anterior && AmorOrders.claveEtiqueta(pedido.etiqueta).startsWith('mesa:') &&
+        !AmorOrders.cuentaPendiente(anterior) && AmorOrders.cuentaPendiente(pedido);
+      if (anterior && anterior.etiqueta === pedido.etiqueta && !reabreMesa) continue;
       const ocupado = AmorOrders.pedidoConEtiqueta(previo.pedidos, pedido.etiqueta, pedido.id) ||
         AmorOrders.pedidoConEtiqueta(next.pedidos, pedido.etiqueta, pedido.id);
       if (ocupado) throw new Error(`La etiqueta ${pedido.etiqueta} ya tiene un pedido abierto (N° ${ocupado.numero}).`);

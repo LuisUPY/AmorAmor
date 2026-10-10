@@ -30,7 +30,7 @@ globalThis.AmorHistory = (() => {
     const dias = new Map();
     for (const pedido of pedidos) {
       const fechas = new Set(pedido.partidas.filter(partida => partida.pagado).map(partida => fechaLocal(partida.pagadoEn)));
-      if (pedido.partidas.some(partida => !partida.pagado)) fechas.add(fechaLocal(pedido.creadoEn));
+      if (!pedido.partidas.length || pedido.partidas.some(partida => !partida.pagado)) fechas.add(fechaLocal(pedido.creadoEn));
       for (const fecha of fechas) {
         if (!dias.has(fecha)) dias.set(fecha, []);
         dias.get(fecha).push(pedido);

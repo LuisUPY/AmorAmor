@@ -34,7 +34,7 @@ Fuente: `Menu Amor & Amor.pdf`, 8 páginas. La portada no contiene productos. Se
 
 ## Datos que debe confirmar el restaurante
 
-1. **Dirty chai, página 7:** sin precio impreso. `precio` queda en `null`; el botón y el cálculo bloquean su venta. Para habilitarlo, completa el precio confirmado y elimina `estadoPrecio: "pendiente"` y su nota de precio pendiente.
+1. **Dirty chai, página 7:** el precio no está impreso en el PDF. El restaurante confirmó **$85** durante las correcciones operativas; se actualizó en `menuDB` y su copia JSON y se habilitó la venta.
 2. **Untable del waffle clásico, página 3:** el menú dice “untable a elegir”, sin alternativas. Se usa texto requerido, sin cargo inventado. Al confirmar la lista, reemplaza el grupo por `tipo: "unica"` y sus `valores` con costos confirmados.
 
 No se deducen costos de ingredientes incluidos ni se crean productos o variantes ausentes de la fuente.

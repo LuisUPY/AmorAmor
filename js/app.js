@@ -418,6 +418,8 @@
     const next = currentState();
     const pedido = next.pedidos.find(p => p.id === pedidoId);
     if (!pedido || !AmorOrders.estaAbierto(pedido)) { notify('Este pedido ya está cerrado.'); return; }
+    try { AmorOrders.validarMesaDisponible(next.pedidos, pedido.etiqueta, pedido.id); }
+    catch (error) { notify(error.message); return; }
     if (next.adicion && next.adicion.pedidoId !== pedidoId) { notify('Confirma o cancela primero los productos del otro pedido.'); return; }
     if (!next.adicion) next.adicion = { pedidoId, partidas: [] };
     if (!commit(next)) return;
@@ -457,7 +459,7 @@
         const index = next.pedidos.findIndex(p => p.id === state.pedidoDestinoId);
         if (index < 0) throw new Error('No se encontró el pedido.');
         const anterior = next.pedidos[index];
-        const pedido = AmorOrders.agregarPartidas(anterior, state.partidas);
+        const pedido = AmorOrders.agregarPartidas(anterior, state.partidas, next.pedidos);
         const nuevas = pedido.partidas.slice(anterior.partidas.length);
         next.pedidos[index] = pedido;
         next.adicion = null;

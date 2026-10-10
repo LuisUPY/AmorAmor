@@ -77,7 +77,7 @@ async function main() {
     await page.locator('#product-search').fill('no-existe-xyz');
     assert.equal(await page.locator('#catalog-empty').isVisible(), true);
     await page.locator('#product-search').fill('dirty chai');
-    assert.equal(await page.locator('[data-producto="dirty-chai"] button').isDisabled(), true);
+    assert.equal(await page.locator('[data-producto="dirty-chai"] button').isDisabled(), false);
     await page.locator('#product-search').fill('');
     assert.equal(await page.locator('.product-card').count(), 0);
 
@@ -143,7 +143,7 @@ async function main() {
     assert.equal(await page.locator('#ticket-lines .paid').count(), 1);
     assert.equal(await page.locator('#open-orders-count').textContent(), '1');
     await page.locator('#ticket-dialog [data-close]').click();
-    await appOption('#history-button');
+    await page.locator('#history-button').click();
     assert.equal(await page.locator('#history-category-kpis .history-metric').count(), 5);
     assert.equal(await page.locator('#history-summary .sales-total strong').textContent(), '$460.00');
     assert.equal(await page.locator('[data-categoria="Alimentos"] strong').textContent(), '2');
@@ -155,7 +155,7 @@ async function main() {
       await page.screenshot({ path: path.join(output, `pos-${width}.png`) });
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, `Desbordamiento a ${width}px`);
       assert.equal(await page.locator('#open-orders-bar').evaluate(n => n.getBoundingClientRect().bottom <= innerHeight), true);
-      await appOption('#history-button');
+      await page.locator('#history-button').click();
       await page.screenshot({ path: path.join(output, `history-${width}.png`) });
       assert.equal(await page.locator('#history-dialog').evaluate(n => n.scrollWidth <= n.clientWidth), true);
       assert.equal(await page.locator('#history-detail').evaluate(n => n.scrollWidth <= n.clientWidth), true);

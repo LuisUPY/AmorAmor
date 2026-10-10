@@ -1,4 +1,4 @@
-// Catálogo literal. Precios en MXN; null requiere confirmación.
+// Catálogo literal. Precios en MXN.
 const menuDB = {
   "Entradas": {
     "Para compartir": [
@@ -527,8 +527,8 @@ const menuDB = {
       {
         "id": "dirty-chai",
         "nombre": "Dirty chai",
-        "precio": null,
-        "descripcion": "Dirty chai. El precio no aparece en el menú.",
+        "precio": 85,
+        "descripcion": "Dirty chai.",
         "opciones": [
           {
             "id": "extras",
@@ -553,8 +553,7 @@ const menuDB = {
           "archivo": "assets/Menu Amor & Amor.pdf",
           "pagina": 7
         },
-        "estadoPrecio": "pendiente",
-        "notaFuente": "Sin precio impreso. Confirma el importe antes de vender; no se usa cero ni se infiere un precio."
+        "notaFuente": "Precio de $85 confirmado por el restaurante."
       }
     ],
     "Sin café": [

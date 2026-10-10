@@ -10,6 +10,8 @@ assert.deepEqual(JSON.parse(JSON.stringify(menuDB)), JSON.parse(fs.readFileSync(
 assert.deepEqual(Object.keys(menuDB), ['Entradas', 'Bebidas', 'Alimentos', 'Postres', 'Paquetes']);
 assert.equal(pos.catalogo.length, 105);
 assert.equal(new Set(pos.catalogo.map(p => p.id)).size, 105);
+assert.equal(pos.catalogo.find(p => p.id === 'dirty-chai').precio, 85);
+assert.equal(pos.crearPartida('dirty-chai').precioUnitarioCentavos, 8500);
 for (const [macro, expected] of [['Entradas', 3], ['Bebidas', 65], ['Alimentos', 32], ['Postres', 0], ['Paquetes', 5]]) {
   assert.equal(pos.catalogo.filter(p => p.macroCategoria === macro).length, expected);
 }

@@ -74,8 +74,9 @@ async function main() {
     await page.locator('#cash-open-dialog [data-close]').click();
     await page.locator('#review-order').click();
     await page.locator('#confirm-order').click();
-    await page.waitForFunction(() => window.printedTickets.length === 1);
-    const printed = await page.evaluate(() => window.printedTickets[0]);
+    await page.waitForFunction(() => window.printedTickets.length === 2);
+    const printed = await page.evaluate(() => ({ text: window.printedTickets.map(t => t.text).join(''), areas: window.printedTickets.flatMap(t => t.areas) }));
+    assert.deepEqual(await page.evaluate(() => window.printedTickets.map(t => t.areas.length)), [1, 1]);
     assert.match(printed.text, /COCINA/);
     assert.match(printed.text, /BARRA/);
     assert.match(printed.text, /Chilaquiles con pollo o huevo/);
@@ -98,10 +99,10 @@ async function main() {
     // Reimprimir desde un diálogo abierto no debe incluir la capa modal en el papel.
     await page.locator('[data-pedido="pedido-1"]').click();
     await page.evaluate(() => { window.holdPrint = true; });
-    await page.locator('#reprint-order').click();
-    await page.waitForFunction(() => window.printedTickets.length === 2);
+    await page.locator('#reprint-kitchen').click();
+    await page.waitForFunction(() => window.printedTickets.length === 3);
     await page.emulateMedia({ media: 'print' });
-    assert.equal(await page.locator('#zona-impresion').evaluate(n => getComputedStyle(n).width), '300px');
+    assert.ok(Math.abs(await page.locator('#zona-impresion').evaluate(n => parseFloat(getComputedStyle(n).width)) - 80 * 96 / 25.4) < 0.1);
     assert.equal(await page.locator('#zona-impresion').isVisible(), true);
     assert.equal(await page.locator('main').isVisible(), false);
     assert.equal(await page.locator('#ticket-dialog').evaluate(n => n.open), true);
@@ -116,8 +117,8 @@ async function main() {
       window.drinkOnlyJob = AmorPrinting.imprimirComandas({ numero: 999, creadoEn: '2026-10-06T16:00:00Z',
         etiqueta: 'Prueba de ajuste', partidas: [{ ...AmorPOS.crearPartida('cafe-americano'), nota: 'X'.repeat(200) }] });
     });
-    await page.waitForFunction(() => window.printedTickets.length === 3);
-    assert.deepEqual(await page.evaluate(() => window.printedTickets[2].areas.map(area => area.area)), ['BARRA']);
+    await page.waitForFunction(() => window.printedTickets.length === 4);
+    assert.deepEqual(await page.evaluate(() => window.printedTickets[3].areas.map(area => area.area)), ['BARRA']);
     await page.emulateMedia({ media: 'print' });
     assert.equal(await page.locator('#zona-impresion').evaluate(n => n.scrollWidth <= n.clientWidth), true);
     assert.equal(await page.locator('#zona-impresion .comanda-modificadores').evaluate(n => n.scrollWidth <= n.clientWidth), true);
@@ -307,11 +308,8 @@ async function main() {
     const preset = label => page.locator('#order-label-presets').getByRole('button', { name: label, exact: true });
     assert.equal(await page.locator('#order-label-presets button').count(), 10);
     for (let table = 1; table <= 8; table++) {
-      if (table === 3) {
-        assert.equal(await preset('Mesa 3').isDisabled(), true);
-        assert.match(await preset('Mesa 3').getAttribute('title'), /ocupad/i);
-        continue;
-      }
+      // La cuenta de Mesa 3 ya se saldó, aunque sus productos siguen sin preparar.
+      assert.equal(await preset(`Mesa ${table}`).isDisabled(), false);
       await preset(`Mesa ${table}`).click();
       assert.equal((await snapshot()).borrador.etiqueta, `Mesa ${table}`);
     }
@@ -325,6 +323,7 @@ async function main() {
     const labeled = page.locator('[data-pedido="pedido-3"]');
     assert.equal(await labeled.locator('.queue-label').textContent(), 'Mesa 4 · Ana');
     assert.equal(await preset('Mesa 4').isDisabled(), true);
+    assert.equal(await preset('Mesa 4').evaluate(n => getComputedStyle(n).backgroundColor), 'rgb(229, 231, 235)');
     assert.ok(await labeled.evaluate(n => parseFloat(getComputedStyle(n.querySelector('.queue-label')).fontSize) > parseFloat(getComputedStyle(n.querySelector('.queue-number')).fontSize)));
     await labeled.click();
     await page.locator('#pay-all').click();
@@ -386,7 +385,7 @@ async function main() {
     const bill = await page.evaluate(() => window.printedTickets[1]);
     assert.deepEqual(bill.areas.map(area => area.area), ['CUENTA']);
     assert.match(bill.text, /Mesa 4 · Ana/);
-    assert.match(bill.text, /TOTAL\$129\.25Abonado\$60\.00Pendiente de pago\$69\.25/);
+    assert.match(bill.text, /Subtotal\$129\.25TOTAL A PAGAR\$129\.25/);
     assert.deepEqual(await snapshot(), added);
     await page.emulateMedia({ media: 'print' });
     assert.equal(await page.locator('#zona-impresion').evaluate(n => n.scrollWidth <= n.clientWidth), true);
@@ -399,6 +398,7 @@ async function main() {
     await submitPayment('0', '69.25');
     assert.equal((await snapshot()).pedidos[2].montoEfectivo, 60);
     assert.equal((await snapshot()).pedidos[2].montoTarjeta, 69.25);
+    assert.equal(await preset('Mesa 4').isDisabled(), false, 'Libera la mesa antes de preparar');
     await page.locator('#prepare-all').click();
     assert.equal(await page.locator('#add-to-order').isDisabled(), true);
     assert.equal(await preset('Mesa 4').isDisabled(), false);
@@ -424,6 +424,9 @@ async function main() {
       await page.setViewportSize({ width, height: width > 700 ? 1000 : 844 });
       await page.evaluate(() => window.scrollTo(0, 0));
       assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true);
+      const positions = await page.evaluate(() => ({ history: document.getElementById('history-button').getBoundingClientRect().right, cash: document.getElementById('cash-options').getBoundingClientRect().left }));
+      assert.ok(positions.history < positions.cash, 'Historial queda a la izquierda de caja');
+      assert.equal(await page.locator('#app-options #history-button').count(), 0);
       await page.locator('#app-options > summary').click();
       assert.equal(await page.locator('#history-button').isVisible(), true);
       assert.equal(await page.locator('#app-options .options-panel').evaluate(n => n.getBoundingClientRect().left >= 0 && n.getBoundingClientRect().right <= innerWidth), true);
@@ -500,23 +503,39 @@ async function main() {
     assert.equal(await page.locator('#cash-summary [data-value="efectivoEsperadoCentavos"]').textContent(), '$735.11');
     assert.equal(await page.locator('#cash-summary [data-value="totalVentasCentavos"]').textContent(), '$479.25');
     assert.match(await page.locator('#cash-close-tips').textContent(), /Ana · 60%\$21\.01/);
+    assert.equal(await page.locator('#cash-daily-tip').inputValue(), '35.02');
+    await page.locator('#cash-daily-tip').fill('30');
+    assert.equal(await page.locator('#close-shift').isDisabled(), true);
+    assert.equal(await page.locator('#print-current-cut').isDisabled(), true);
+    await page.locator('#cash-daily-tip').fill('50.02');
+    assert.equal(await page.locator('#cash-summary [data-value="efectivoEsperadoCentavos"]').textContent(), '$750.11');
+    const beforePreview = await snapshot();
+    await page.locator('#print-current-cut').click();
+    await page.waitForFunction(() => window.printedTickets.length === 1 && document.getElementById('zona-impresion').childElementCount === 0);
+    assert.match(await page.evaluate(() => window.printedTickets[0].text), /VISTA PREVIA · Turno abierto/);
+    assert.deepEqual(await snapshot(), beforePreview);
+    await failWrites(); await page.locator('#close-shift').click();
+    assert.deepEqual(await snapshot(), beforePreview);
+    assert.equal(await page.locator('#cash-daily-tip').inputValue(), '50.02');
+    await restoreWrites();
+    await page.evaluate(() => { window.printedTickets = []; });
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.evaluate(() => { window.holdPrint = true; });
     await page.locator('#close-shift').click();
     const tipsClosed = await snapshot();
     const tipsCut = tipsClosed.historialCortes.at(-1);
     assert.equal(tipsClosed.caja.propinas.length, 0);
-    assert.equal(tipsCut.totalPropinasCentavos, 3502);
-    assert.equal(tipsCut.propinasEfectivoCentavos, 2501);
+    assert.equal(tipsCut.totalPropinasCentavos, 5002);
+    assert.equal(tipsCut.propinasEfectivoCentavos, 4001);
     assert.equal(tipsCut.propinasTarjetaCentavos, 1001);
-    assert.deepEqual(tipsCut.distribucionPropinas.map(p => p.montoCentavos), [2101, 1401]);
+    assert.deepEqual(tipsCut.distribucionPropinas.map(p => p.montoCentavos), [3001, 2001]);
     await page.waitForFunction(() => window.printedTickets.length === 1);
     const cutPrinted = await page.evaluate(() => window.printedTickets.at(-1));
     assert.deepEqual(cutPrinted.areas.map(area => area.area), ['CORTE']);
     assert.match(cutPrinted.text, /CORTE DE CAJA/);
-    assert.match(cutPrinted.text, /735\.11/);
-    assert.match(cutPrinted.text, /35\.02/);
-    assert.match(cutPrinted.text, /Ana.*60%.*21\.01/);
+    assert.match(cutPrinted.text, /750\.11/);
+    assert.match(cutPrinted.text, /50\.02/);
+    assert.match(cutPrinted.text, /Ana.*60%.*30\.01/);
     await page.emulateMedia({ media: 'print' });
     assert.equal(await page.locator('#zona-impresion').evaluate(n => n.scrollWidth <= n.clientWidth), true);
     await page.screenshot({ path: path.join(output, 'corte-con-propinas.png') });
@@ -524,10 +543,11 @@ async function main() {
     await page.emulateMedia({ media: 'screen' });
     await page.evaluate(() => { window.holdPrint = false; });
     await cashOption('#cash-history-button');
+    assert.equal(await page.locator('.cash-saved-cut').first().getByRole('button', { name: 'Reimprimir Corte', exact: true }).isVisible(), true);
     await page.locator('.cash-saved-cut').first().locator('summary').first().click();
-    assert.match(await page.locator('.cash-saved-cut').first().textContent(), /Ana · 60%\$21\.01/);
+    assert.match(await page.locator('.cash-saved-cut').first().textContent(), /Ana · 60%\$30\.01/);
     const beforeReprint = await snapshot();
-    await page.locator('.cash-saved-cut').first().getByRole('button', { name: 'Imprimir corte', exact: true }).click();
+    await page.locator('.cash-saved-cut').first().getByRole('button', { name: 'Reimprimir Corte', exact: true }).click();
     await page.waitForFunction(() => window.printedTickets.length === 2 && document.getElementById('zona-impresion').childElementCount === 0);
     assert.deepEqual(await snapshot(), beforeReprint);
     await page.locator('#cash-history-dialog [data-close]').click();
@@ -546,6 +566,85 @@ async function main() {
     assert.equal(await page.locator('#review-label').textContent(), 'Delivery #2');
     await page.locator('#confirm-order').click();
     assert.equal((await snapshot()).pedidos.at(-1).etiqueta, 'Delivery #2');
+    await page.waitForFunction(() => document.getElementById('zona-impresion').childElementCount === 0);
+    await page.evaluate(() => { window.printedTickets = []; });
+    await page.locator('#history-button').click();
+    await page.locator('.history-order-open').filter({ hasText: 'Pedido N° 1 ↗' }).click();
+    assert.match(await page.locator('#ticket-status').textContent(), /PAGADO/);
+    assert.equal(await page.locator('#ticket-lines .remove-product-button').evaluateAll(buttons => buttons.every(button => button.disabled)), true);
+    assert.match(await page.locator('#ticket-lines').textContent(), /Salsa: Roja.*Efectivo.*Tarjeta\/Transferencia/);
+    const beforeOrderReprint = await snapshot();
+    for (const [id, area, count] of [['reprint-kitchen', 'COCINA', 1], ['reprint-bar', 'BARRA', 2], ['print-bill', 'CUENTA', 3]]) {
+      await page.locator(`#${id}`).click();
+      await page.waitForFunction(n => window.printedTickets.length === n && document.getElementById('zona-impresion').childElementCount === 0, count);
+      assert.deepEqual(await page.evaluate(() => window.printedTickets.at(-1).areas.map(t => t.area)), [area]);
+    }
+    assert.doesNotMatch(await page.evaluate(() => window.printedTickets.at(-1).text), /Abonado|Pendiente de pago/);
+    assert.deepEqual(await snapshot(), beforeOrderReprint);
+    await page.locator('#ticket-dialog [data-close]').click();
+    await page.locator('#history-cuts-button').click();
+    assert.equal(await page.locator('#cash-history-list .cash-saved-cut').count(), (await snapshot()).historialCortes.length);
+    await page.locator('#cash-history-dialog [data-close]').click();
+    await page.locator('#history-dialog [data-close]').click();
+
+    // Eliminar productos preparados sin cobro: confirmación, guardado atómico y cancelación final.
+    await preset('Mesa 8').click();
+    for (const [concepto, monto] of [['Producto a quitar', '20'], ['Producto a conservar', '10']]) {
+      await page.locator('#add-extra').click();
+      await page.locator('#extra-concept').fill(concepto);
+      await page.locator('#extra-amount').fill(monto);
+      await page.locator('#extra-form button[type="submit"]').click();
+    }
+    await page.getByRole('button', { name: 'Añadir una unidad de Producto a quitar', exact: true }).click();
+    await page.locator('#review-order').click();
+    await page.locator('#confirm-order').click();
+    await page.waitForFunction(() => document.getElementById('zona-impresion').childElementCount === 0);
+    const removableId = (await snapshot()).pedidos.at(-1).id;
+    const removableNumber = (await snapshot()).pedidos.at(-1).numero;
+    await page.locator(`[data-pedido="${removableId}"]`).click();
+    const removableLine = page.locator('#ticket-lines .ticket-line').filter({ hasText: 'Producto a quitar' });
+    await removableLine.getByRole('button', { name: 'Marcar PREPARADO', exact: true }).click();
+    assert.equal(await page.locator('#ticket-total').textContent(), '$50.00');
+    const beforeRemoval = await snapshot();
+    await removableLine.getByRole('button', { name: 'Eliminar producto', exact: true }).click();
+    assert.match(await page.locator('#remove-item-description').textContent(), /2 × Producto a quitar.*\$40\.00.*\$10\.00/);
+    await page.locator('#remove-item-dialog').getByRole('button', { name: 'Conservar producto', exact: true }).click();
+    assert.deepEqual(await snapshot(), beforeRemoval);
+    await removableLine.getByRole('button', { name: 'Eliminar producto', exact: true }).click();
+    await page.setViewportSize({ width: 320, height: 844 });
+    assert.equal(await page.locator('#remove-item-dialog').evaluate(n => n.scrollWidth <= n.clientWidth), true);
+    await page.screenshot({ path: path.join(output, 'eliminar-producto-320.png') });
+    await failWrites(); await page.locator('#confirm-remove-item').click();
+    assert.deepEqual(await snapshot(), beforeRemoval);
+    assert.equal(await page.locator('#remove-item-error').isVisible(), true);
+    await restoreWrites(); await page.locator('#confirm-remove-item').click();
+    assert.equal(await page.locator('#remove-item-dialog').isVisible(), false);
+    assert.equal(await page.locator('#ticket-total').textContent(), '$10.00');
+    const afterRemoval = await snapshot();
+    assert.equal(afterRemoval.pedidos.at(-1).partidas.length, 1);
+    assert.equal(afterRemoval.pedidos.at(-1).partidasEliminadas[0].cantidad, 2);
+    assert.deepEqual(afterRemoval.caja, beforeRemoval.caja);
+    assert.deepEqual(afterRemoval.historialCortes, beforeRemoval.historialCortes);
+    await page.evaluate(() => { window.printedTickets = []; });
+    await page.locator('#print-bill').click();
+    await page.waitForFunction(() => window.printedTickets.length === 1 && document.getElementById('zona-impresion').childElementCount === 0);
+    assert.doesNotMatch(await page.evaluate(() => window.printedTickets[0].text), /Producto a quitar/);
+    assert.match(await page.evaluate(() => window.printedTickets[0].text), /TOTAL A PAGAR\$10\.00/);
+    await page.locator('#ticket-lines .remove-product-button').click();
+    assert.match(await page.locator('#remove-item-description').textContent(), /último producto.*CANCELADO/);
+    await page.locator('#confirm-remove-item').click();
+    assert.match(await page.locator('#ticket-status').textContent(), /CANCELADO/);
+    assert.equal(await page.locator('#print-bill').isDisabled(), true);
+    assert.equal(await page.locator(`[data-pedido="${removableId}"]`).count(), 0);
+    assert.equal(await preset('Mesa 8').isDisabled(), false);
+    await page.reload(); await page.waitForSelector('.product-card');
+    await page.locator('#cash-open-dialog [data-close]').click();
+    await page.locator('#history-button').click();
+    await page.locator('.history-order-open').filter({ hasText: `Pedido N° ${removableNumber} ↗` }).click();
+    assert.match(await page.locator('#ticket-status').textContent(), /CANCELADO/);
+    await page.locator('#ticket-removed > summary').click();
+    assert.match(await page.locator('#ticket-removed-lines').textContent(), /Producto a quitar.*Producto a conservar/);
+    assert.equal((await snapshot()).pedidos.at(-1).partidasEliminadas.length, 2);
     assert.deepEqual(errors, []);
     await context.close();
     console.log('✓ Caja: pagos mixtos, cambio neto, validación dinámica, corte e historial; fallos atómicos; comandas y CSS térmico.');

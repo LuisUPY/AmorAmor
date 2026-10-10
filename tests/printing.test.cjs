@@ -80,8 +80,10 @@ const pedido = partidas => ({ numero: 42, creadoEn: '2026-10-06T15:05:00Z', etiq
 const copia = valor => JSON.parse(JSON.stringify(valor));
 async function imprimir(entorno, ticket) {
   const promesa = entorno.imprimirComandas(ticket);
-  entorno.lanzarFrame();
-  entorno.afterprint();
+  while (entorno.zona.children.length) {
+    entorno.lanzarFrame();
+    entorno.afterprint();
+  }
   return promesa;
 }
 
@@ -114,6 +116,43 @@ test('solo genera el área que tiene productos y rechaza pedidos vacíos', async
   assert.equal(app.capturas.length, 2);
 });
 
+test('dos trabajos independientes conservan la instantánea y el bloqueo entre áreas', async () => {
+  const app = entorno();
+  app.document.title = 'POS';
+  const ticket = pedido([simple('Pan', 'Alimentos'), simple('Latte', 'Bebidas')]);
+  const job = app.imprimirComandas(ticket);
+  app.lanzarFrame();
+  assert.deepEqual(app.capturas[0].areas, ['COCINA']);
+  assert.equal(app.document.title, 'Pedido-42-COCINA');
+  ticket.partidas[1].nombre = 'Cambio posterior';
+  app.afterprint();
+  await assert.rejects(app.imprimirCuenta(ticket), /en curso/);
+  app.afterprint(); // Un evento duplicado antes del siguiente print no omite Barra.
+  app.lanzarFrame();
+  assert.deepEqual(app.capturas[1].areas, ['BARRA']);
+  assert.match(app.capturas[1].texto, /Latte/);
+  assert.doesNotMatch(app.capturas[1].texto, /Pan|Cambio posterior/);
+  assert.equal(app.document.title, 'Pedido-42-BARRA');
+  app.afterprint();
+  assert.deepEqual(copia((await job).areas), ['COCINA', 'BARRA']);
+  assert.equal(app.document.title, 'POS');
+});
+
+test('reimpresiones por área omiten áreas vacías y no alteran los productos', async () => {
+  const app = entorno();
+  const ticket = pedido([simple('Pan', 'Alimentos'), simple('Latte', 'Bebidas')]);
+  const original = JSON.stringify(ticket);
+  for (const [fn, area] of [['imprimirComandaCocina', 'COCINA'], ['imprimirComandaBarra', 'BARRA']]) {
+    const job = app[fn](ticket);
+    app.lanzarFrame(); app.afterprint(); await job;
+    assert.deepEqual(app.capturas.at(-1).areas, [area]);
+  }
+  const vacia = await app.imprimirComandaBarra(pedido([simple('Pan', 'Entradas')]));
+  assert.deepEqual(copia(vacia.areas), []);
+  assert.equal(app.capturas.length, 2);
+  assert.equal(JSON.stringify(ticket), original);
+});
+
 test('imprime selecciones reales, opciones de texto, notas seguras y fecha/hora de Mérida', async () => {
   const app = entorno();
   const food = app.AmorPOS.crearPartida('chilaquiles-con-pollo-o-huevo', { salsa: 'roja', proteina: 'pollo', extras: ['huevo'] });
@@ -124,8 +163,8 @@ test('imprime selecciones reales, opciones de texto, notas seguras y fecha/hora 
   const ticket = pedido([food, waffle, coffee]);
   ticket.etiqueta = '<svg onload=alert(2)>Mesa 3';
   await imprimir(app, ticket);
-  const { texto, areas } = app.capturas[0];
-  assert.deepEqual(areas, ['COCINA', 'BARRA']);
+  const texto = app.capturas.map(captura => captura.texto).join('');
+  assert.deepEqual(app.capturas.map(captura => captura.areas), [['COCINA'], ['BARRA']]);
   assert.match(texto, /Pedido #42/);
   assert.match(texto, /2 x Chilaquiles/);
   assert.match(texto, /Salsa: Roja/);
@@ -220,12 +259,14 @@ test('usa la salida del medio print como respaldo de afterprint', async () => {
   assert.equal(app.listenersActivos(), 0);
 });
 
-test('cuenta detallada: cantidades, precios con extras, abonos y saldo sin modificar la venta', async () => {
+test('cuenta detallada: subtotal, total y métodos ingresados sin abonos ni saldo', async () => {
   const app = entorno();
   const food = { ...app.AmorPOS.crearPartida('chilaquiles-con-pollo-o-huevo', { salsa: 'roja', proteina: 'pollo', extras: ['huevo', 'pollo'] }, '<b>Sin cebolla</b>'), cantidad: 2 };
   const coffee = app.AmorPOS.crearPartida('cafe-americano', { extras: ['leche-deslactosada', 'shot-de-espresso'] });
   let ticket = app.AmorOrders.nuevoPedido([food, coffee], 'Mesa 3 · Ana', 42);
   ticket = app.AmorOrders.marcarPartida(ticket, ticket.partidas[0].id, 'pagado');
+  ticket.partidas[0].montoEfectivo = 300;
+  ticket.partidas[0].montoTarjeta = 160;
   const before = JSON.stringify(ticket);
   const job = app.imprimirCuenta(ticket);
   await assert.rejects(app.imprimirComandas(ticket), /en curso/);
@@ -236,7 +277,9 @@ test('cuenta detallada: cantidades, precios con extras, abonos y saldo sin modif
   assert.match(text, /2 x Chilaquiles/);
   assert.match(text, /\$230\.00 c\/u\$460\.00/);
   assert.match(text, /\$100\.00 c\/u\$100\.00/);
-  assert.match(text, /TOTAL\$560\.00Abonado\$460\.00Pendiente de pago\$100\.00/);
+  assert.match(text, /Subtotal\$560\.00TOTAL A PAGAR\$560\.00/);
+  assert.match(text, /Efectivo\$300\.00.*Tarjeta\/Transferencia\$160\.00/);
+  assert.doesNotMatch(text, /Abonado|Pendiente de pago/);
   assert.match(text, /Nota: <b>Sin cebolla<\/b>/);
   assert.equal(JSON.stringify(ticket), before);
   app.afterprint(); await job;
@@ -246,7 +289,8 @@ test('cuenta detallada: cantidades, precios con extras, abonos y saldo sin modif
   ticket = app.AmorOrders.marcarPartida(ticket, 'todos', 'pagado');
   const settled = app.imprimirCuenta(ticket);
   app.lanzarFrame(); app.afterprint(); await settled;
-  assert.match(app.capturas[1].texto, /Abonado\$560\.00Pendiente de pago\$0\.00/);
+  assert.doesNotMatch(app.capturas[1].texto, /Abonado|Pendiente de pago/);
+  assert.match(app.capturas[1].texto, /pagos anteriores sin método/);
 });
 
 function corteGuardado(app, config = { tipo: 'igual', personas: 3 }) {
@@ -347,4 +391,15 @@ test('corte usa el bloqueo compartido, rechaza datos abiertos o inconsistentes y
   const reintento = app.imprimirCorte(corte);
   app.lanzarFrame(); app.afterprint(); await reintento;
   assert.equal(app.capturas.length, 2);
+});
+
+test('la impresión previa de corte identifica el turno abierto y conserva sus datos', async () => {
+  const app = entorno();
+  const corte = corteGuardado(app);
+  const before = JSON.stringify(corte);
+  const job = app.imprimirCorte(corte, { provisional: true });
+  app.lanzarFrame(); app.afterprint(); await job;
+  assert.match(app.capturas[0].texto, /VISTA PREVIA · Turno abierto/);
+  assert.doesNotMatch(app.capturas[0].texto, /Turno cerrado|Cierre:/);
+  assert.equal(JSON.stringify(corte), before);
 });

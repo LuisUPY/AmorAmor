@@ -29,7 +29,7 @@
 .cash-history-modal { width: min(680px, calc(100% - 28px)); }
 .cash-history-list { margin-top: 20px; }
 .cash-saved-cut { border: 1px solid var(--line); border-radius: 10px; padding: 14px; margin-top: 12px; }
-.cash-saved-cut > summary { cursor: pointer; line-height: 1.8; font-size: 12px; overflow-wrap: anywhere; }
+.cash-saved-cut > details > summary { cursor: pointer; line-height: 1.8; font-size: 12px; overflow-wrap: anywhere; }
 .cash-saved-cut .cash-summary { margin-top: 12px; }
 
 @media (max-width: 700px) {
@@ -41,16 +41,16 @@
 #zona-impresion { display: none; }
 @page { margin: 0; }
 @media print {
-  html, body { margin: 0 !important; padding: 0 !important; width: 300px !important; min-width: 0 !important; background: #fff !important; color: #000 !important; }
+  html, body { margin: 0 !important; padding: 0 !important; width: 80mm !important; min-width: 0 !important; background: #fff !important; color: #000 !important; }
   body > :not(#zona-impresion) { display: none !important; }
   dialog, dialog::backdrop { display: none !important; }
   #zona-impresion {
     display: block !important;
     position: static !important;
-    width: 300px;
-    max-width: 300px;
+    width: 80mm;
+    max-width: 80mm;
     margin: 0;
-    padding: 10px;
+    padding: 3mm;
     box-sizing: border-box;
     font-family: "Courier New", Courier, monospace;
     font-size: 13px;
@@ -79,7 +79,8 @@
   .cuenta-fila > strong { flex-shrink: 0; font-variant-numeric: tabular-nums; }
   .cuenta-totales { border-top: 1px dashed #000; padding-top: 8px; }
   .cuenta-total { font-size: 18px; font-weight: bold; }
-  .cuenta-saldo { font-weight: bold; margin-top: 10px; }
+  .cuenta-pagos { border-top: 1px dashed #000; margin-top: 12px; padding-top: 8px; }
+  .cuenta-pagos h4 { font-size: 12px; margin: 0 0 8px; }
 }
 
 /* El corte comparte el papel térmico de las comandas y ocupa un solo ticket. */

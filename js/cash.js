@@ -243,6 +243,14 @@ globalThis.AmorCash = (() => {
     resultado.repartoPropinas = normalizarRepartoPropinas(config);
     return resultado;
   }
+  function completarPropinaDelDia(caja, monto, fecha = new Date().toISOString()) {
+    const actual = exigirAbierta(caja);
+    const total = montoACentavos(monto, true);
+    const registrado = resumirPropinasSinValidar(actual).totalCentavos;
+    if (total < registrado) throw new Error('La Propina del Día no puede ser menor que las propinas ya registradas.');
+    // El campo contiene el total del turno. Solo se agrega lo que aún no se registró.
+    return total === registrado ? actual : registrarPropina(actual, (total - registrado) / 100, 'efectivo', fecha);
+  }
   function resumirPropinas(cajaOCorte) {
     const turno = cajaOCorte && Object.hasOwn(cajaOCorte, 'cerradoEn') ? normalizarCorte(cajaOCorte) : normalizarCaja(cajaOCorte);
     return resumirPropinasSinValidar(turno);
@@ -387,6 +395,6 @@ globalThis.AmorCash = (() => {
     return true;
   }
   return Object.freeze({ metodos, montoACentavos, validarPago, normalizarPedidoPagos, cajaVacia, normalizarCaja, abrirCaja, registrarGasto,
-    registrarPropina, configurarRepartoPropinas, resumirPropinas, resumirCaja,
+    registrarPropina, completarPropinaDelDia, configurarRepartoPropinas, resumirPropinas, resumirCaja,
     normalizarCorte, cerrarCaja, cobrarPartidas, validarVinculos });
 })();

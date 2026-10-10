@@ -96,7 +96,7 @@
     const ticket = elemento('section', 'comanda-ticket cuenta-ticket');
     ticket.dataset.area = 'CUENTA';
     const cabecera = elemento('header', 'comanda-cabecera');
-    cabecera.append(elemento('h2', '', 'AMOR & AMOR'), elemento('h3', 'comanda-area', 'CUENTA'),
+    cabecera.append(elemento('h3', '', 'AMOR & AMOR'), elemento('h2', 'comanda-area', 'CUENTA'),
       elemento('p', 'comanda-etiqueta', pedido.etiqueta || 'Sin etiqueta'),
       elemento('p', '', `Pedido #${pedido.numero}`), elemento('p', '', fechaHora));
     ticket.append(cabecera, elemento('p', 'cuenta-ayuda', 'Precios en MXN. Incluyen los extras seleccionados.'));
@@ -116,14 +116,28 @@
         elemento('strong', '', AmorPOS.dinero(partida.precioUnitarioCentavos * partida.cantidad / 100)));
       item.append(importes); lista.append(item);
     }
-    const pagado = pedido.partidas.filter(p => p.pagado).reduce((total, p) => total + p.precioUnitarioCentavos * p.cantidad, 0);
     const totales = elemento('div', 'cuenta-totales');
-    for (const [etiqueta, monto, clase] of [['TOTAL', pedido.totalCentavos, 'cuenta-total'], ['Abonado', pagado, ''], ['Pendiente de pago', pedido.totalCentavos - pagado, 'cuenta-saldo']]) {
+    for (const [etiqueta, monto, clase] of [['Subtotal', pedido.totalCentavos, ''], ['TOTAL A PAGAR', pedido.totalCentavos, 'cuenta-total']]) {
       const fila = elemento('div', `cuenta-fila ${clase}`);
       fila.append(elemento('span', '', etiqueta), elemento('strong', '', AmorPOS.dinero(monto / 100)));
       totales.append(fila);
     }
-    ticket.append(lista, totales, elemento('footer', 'comanda-pie', 'Gracias por compartir tu día con nosotros.'));
+    const pagos = elemento('section', 'cuenta-pagos');
+    pagos.append(elemento('h4', '', 'MÉTODOS DE PAGO INGRESADOS'));
+    const pagadas = pedido.partidas.filter(p => p.pagado);
+    const montos = { Efectivo: 0, 'Tarjeta/Transferencia': 0 };
+    let sinMetodo = false;
+    for (const partida of pagadas) {
+      if (partida.montoEfectivo == null) { sinMetodo = true; continue; }
+      montos.Efectivo += AmorCash.montoACentavos(partida.montoEfectivo, true);
+      montos['Tarjeta/Transferencia'] += AmorCash.montoACentavos(partida.montoTarjeta, true);
+    }
+    for (const [metodo, centavos] of Object.entries(montos)) {
+      if (centavos > 0) pagos.append(filaCorte(metodo, centavos, 'cuenta-fila'));
+    }
+    if (!pagadas.length) pagos.append(elemento('p', 'cuenta-ayuda', 'Sin pagos ingresados.'));
+    if (sinMetodo) pagos.append(elemento('p', 'cuenta-ayuda', 'Hay pagos anteriores sin método registrado.'));
+    ticket.append(lista, totales, pagos, elemento('footer', 'comanda-pie', 'Con Amor, Amor & Amor Cafetería'));
     return ticket;
   }
 
@@ -142,14 +156,14 @@
     return fila;
   }
 
-  function crearCorte(corte, propinas) {
+  function crearCorte(corte, propinas, provisional) {
     const ticket = elemento('section', 'comanda-ticket corte-ticket');
     ticket.dataset.area = 'CORTE';
     const cabecera = elemento('header', 'comanda-cabecera');
     cabecera.append(elemento('h2', '', 'AMOR & AMOR'), elemento('h3', 'comanda-area', 'CORTE DE CAJA'),
       elemento('p', '', `Apertura: ${fechaImpresion(corte.abiertoEn)}`),
-      elemento('p', '', `Cierre: ${fechaImpresion(corte.cerradoEn)}`));
-    ticket.append(cabecera, elemento('p', 'corte-ayuda', 'Importes en MXN. Turno cerrado.'));
+      elemento('p', '', `${provisional ? 'Vista previa' : 'Cierre'}: ${fechaImpresion(corte.cerradoEn)}`));
+    ticket.append(cabecera, elemento('p', 'corte-ayuda', provisional ? 'VISTA PREVIA · Turno abierto. Importes en MXN.' : 'Importes en MXN. Turno cerrado.'));
     const resumen = elemento('div', 'corte-resumen');
     for (const [etiqueta, clave, clase] of [
       ['Fondo inicial', 'fondoInicialCentavos', ''],
@@ -194,7 +208,7 @@
     return ticket;
   }
 
-  function imprimirDocumento(documento, tipo) {
+  function imprimirDocumento(documento, tipo, opciones = {}) {
     if (impresionActiva) return Promise.reject(new Error('Hay una impresión en curso. Cierra su diálogo antes de reimprimir.'));
     let zona;
     let copia;
@@ -209,8 +223,8 @@
       // el diálogo no debe cambiar sus cantidades ni sus modificadores.
       copia = JSON.parse(JSON.stringify(documento));
       if (tipo === 'corte') {
-        // Solo los cortes finalizados con movimientos y sumas válidas pueden
-        // imprimirse. Los datos de la caja abierta no son un corte guardado.
+        // La instantánea debe tener movimientos y sumas válidas, tanto al
+        // reimprimir un cierre guardado como al previsualizar el cierre actual.
         copia = AmorCash.normalizarCorte(copia);
         propinas = AmorCash.resumirPropinas(copia);
       } else {
@@ -219,6 +233,7 @@
         if (tipo === 'cuenta') {
           const total = AmorPOS.totalPedido(copia.partidas);
           if (copia.totalCentavos !== total) throw new Error('El total de la cuenta no coincide con sus productos.');
+          copia = AmorCash.normalizarPedidoPagos(copia);
         }
         fechaHora = fechaImpresion(copia.creadoEn);
       }
@@ -230,6 +245,9 @@
       const trabajo = { invocada: false, finalizado: false };
       impresionActiva = trabajo;
       const areas = [];
+      const tickets = [];
+      const tituloOriginal = document.title;
+      let indice = 0;
       let medioImpresion = null;
       let frame = null;
       function finalizar(error) {
@@ -242,6 +260,7 @@
         }
         if (frame != null && window.cancelAnimationFrame) window.cancelAnimationFrame(frame);
         zona.replaceChildren();
+        document.title = tituloOriginal;
         document.body.classList.remove('imprimiendo-comandas');
         impresionActiva = null;
         if (error) reject(error);
@@ -250,12 +269,17 @@
         else resolve(tipo === 'corte' ? { id: copia.id, areas } : { numero: copia.numero, areas });
       }
       function alTerminar() {
-        if (trabajo.invocada) finalizar();
+        if (!trabajo.invocada || trabajo.finalizado) return;
+        trabajo.invocada = false;
+        entroEnImpresion = false;
+        indice++;
+        if (indice === tickets.length) finalizar();
+        else mostrarSiguiente();
       }
       let entroEnImpresion = false;
       function alCambiarMedio(evento) {
         if (evento.matches) entroEnImpresion = true;
-        else if (trabajo.invocada && entroEnImpresion) finalizar();
+        else if (trabajo.invocada && entroEnImpresion) alTerminar();
       }
       function ejecutar() {
         frame = null;
@@ -267,25 +291,34 @@
           finalizar(error);
         }
       }
+      function mostrarSiguiente() {
+        const ticket = tickets[indice];
+        zona.replaceChildren(ticket);
+        document.title = tipo === 'corte' ? `Corte-${copia.id}${opciones.provisional ? '-previo' : ''}` : `Pedido-${copia.numero}-${ticket.dataset.area}`;
+        // Cada área es un trabajo independiente; conserva el bloqueo entre diálogos.
+        if (window.requestAnimationFrame) frame = window.requestAnimationFrame(ejecutar);
+        else ejecutar();
+      }
 
       try {
         zona.replaceChildren();
         if (tipo === 'corte') {
-          zona.append(crearCorte(copia, propinas));
+          tickets.push(crearCorte(copia, propinas, opciones.provisional));
           areas.push('CORTE');
         } else if (tipo === 'cuenta') {
-          zona.append(crearCuenta(copia, fechaHora));
+          tickets.push(crearCuenta(copia, fechaHora));
           areas.push('CUENTA');
         } else {
-          if (comandas.comandaAlimentos.length) {
-            zona.append(crearTicket(copia, 'COCINA', comandas.comandaAlimentos, fechaHora));
+          if (tipo !== 'barra' && comandas.comandaAlimentos.length) {
+            tickets.push(crearTicket(copia, 'COCINA', comandas.comandaAlimentos, fechaHora));
             areas.push('COCINA');
           }
-          if (comandas.comandaBebidas.length) {
-            zona.append(crearTicket(copia, 'BARRA', comandas.comandaBebidas, fechaHora));
+          if (tipo !== 'cocina' && comandas.comandaBebidas.length) {
+            tickets.push(crearTicket(copia, 'BARRA', comandas.comandaBebidas, fechaHora));
             areas.push('BARRA');
           }
         }
+        if (!tickets.length) { finalizar(); return; }
         document.body.classList.add('imprimiendo-comandas');
         window.addEventListener('afterprint', alTerminar);
         if (window.matchMedia) {
@@ -295,8 +328,7 @@
         }
         // Esperar un frame permite aplicar las reglas de impresión al DOM nuevo.
         // No se usa un temporizador de limpieza que pudiera vaciar una vista previa.
-        if (window.requestAnimationFrame) frame = window.requestAnimationFrame(ejecutar);
-        else ejecutar();
+        mostrarSiguiente();
       } catch (error) {
         finalizar(error);
       }
@@ -305,9 +337,13 @@
 
   const imprimirComandas = pedido => imprimirDocumento(pedido, 'comandas');
   const imprimirCuenta = pedido => imprimirDocumento(pedido, 'cuenta');
-  const imprimirCorte = corte => imprimirDocumento(corte, 'corte');
-  globalThis.AmorPrinting = Object.freeze({ separarComandas, imprimirComandas, imprimirCuenta, imprimirCorte });
+  const imprimirComandaCocina = pedido => imprimirDocumento(pedido, 'cocina');
+  const imprimirComandaBarra = pedido => imprimirDocumento(pedido, 'barra');
+  const imprimirCorte = (corte, opciones) => imprimirDocumento(corte, 'corte', opciones);
+  globalThis.AmorPrinting = Object.freeze({ separarComandas, imprimirComandas, imprimirComandaCocina, imprimirComandaBarra, imprimirCuenta, imprimirCorte });
   globalThis.imprimirComandas = imprimirComandas;
   globalThis.imprimirCuenta = imprimirCuenta;
   globalThis.imprimirCorte = imprimirCorte;
+  globalThis.imprimirComandaCocina = imprimirComandaCocina;
+  globalThis.imprimirComandaBarra = imprimirComandaBarra;
 })();

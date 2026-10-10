@@ -104,7 +104,7 @@ assert.equal(normalizedAddition.adicion.partidas[0].cantidad, 3);
 assert.equal(normalizedAddition.borrador.etiqueta, 'Próximo pedido');
 assert.throws(() => storage.normalizar({ ...additionState, adicion: { pedidoId: 'pedido-no-existe', partidas: [] } }), /Selección/);
 
-// Una mesa está ocupada hasta preparar y cobrar todas sus partidas; el detalle no permite duplicarla.
+// Una mesa se libera al saldar, aunque siga pendiente la preparación.
 assert.equal(orders.claveEtiqueta('  Mésa   0003 · Otro cliente  '), 'mesa:3');
 assert.equal(orders.claveEtiqueta('Mesa 3. Ana'), 'mesa:3');
 assert.equal(orders.claveEtiqueta('Mesa 13'), 'etiqueta:mesa 13');
@@ -113,7 +113,10 @@ assert.throws(() => orders.resolverEtiqueta('MESA 03 · Otra persona', [open]), 
 assert.equal(orders.resolverEtiqueta('Mesa 03', [ticket]), 'Mesa 03');
 let reserved = orders.nuevoPedido([coffee], 'Mesa 2', 20);
 reserved = orders.marcarPartida(reserved, 'todos', 'pagado');
-assert.ok(orders.pedidoConEtiqueta([reserved], 'Mesa 02'));
+assert.equal(orders.pedidoConEtiqueta([reserved], 'Mesa 02'), null);
+assert.equal(orders.estaAbierto(reserved), true);
+const nextVisit = orders.nuevoPedido([coffee], 'Mesa 2 · Nueva visita', 25);
+assert.throws(() => orders.agregarPartidas(reserved, [coffee], [reserved, nextVisit]), /cuenta pendiente/);
 reserved = orders.marcarPartida(reserved, 'todos', 'preparado');
 assert.equal(orders.pedidoConEtiqueta([reserved], 'Mesa 02'), null);
 const customLabel = orders.nuevoPedido([coffee], '  Ana   López  ', 21);
@@ -149,6 +152,13 @@ labelState = storage.guardarExpediente(labelState);
 labelState.pedidos.push(orders.nuevoPedido([coffee], 'Mesa 2 · Nueva visita', 32));
 labelState = storage.guardarExpediente(labelState);
 assert.equal(labelState.pedidos.length, 3);
+// Una cuenta saldada no puede reabrir su mesa si ya tiene otra visita pendiente.
+const paidVisit = labelState.pedidos[0];
+const reactivated = JSON.parse(JSON.stringify(labelState));
+reactivated.pedidos[0].partidas.push({ ...orders.nuevoPedido([coffee], '', 100).partidas[0], id: 'adicion-pendiente' });
+reactivated.pedidos[0].totalCentavos = pos.totalPedido(reactivated.pedidos[0].partidas);
+assert.throws(() => storage.guardarExpediente(reactivated), /etiqueta.*pedido abierto/);
+assert.equal(storage.cargarExpediente().pedidos[0].partidas.length, paidVisit.partidas.length);
 
 data.delete(storage.KEY);
 let deliveryState = storage.guardarExpediente({ ...storage.vacio(), pedidos: [deliveryHistory] });

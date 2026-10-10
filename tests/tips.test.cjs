@@ -56,6 +56,21 @@ assert.equal(resumen.propinasTarjetaCentavos, 2499);
 assert.equal(resumen.efectivoEsperadoCentavos, 15205); // Fondo + venta en efectivo + propina en efectivo - gasto.
 assert.equal(cash.validarVinculos([cobrado.pedido], caja, []), true);
 
+// Capturar el total del día agrega solo la diferencia en efectivo y conserva tarjeta.
+const antesDelTotal = JSON.stringify(caja);
+const completada = cash.completarPropinaDelDia(caja, '100.05', movimiento);
+assert.equal(JSON.stringify(caja), antesDelTotal);
+assert.equal(completada.propinas.length, caja.propinas.length + 1);
+assert.equal(cash.resumirCaja(completada).totalPropinasCentavos, 10005);
+assert.equal(cash.resumirCaja(completada).propinasTarjetaCentavos, 2499);
+assert.equal(cash.resumirCaja(completada).efectivoEsperadoCentavos, 17706);
+assert.deepEqual(clone(cash.completarPropinaDelDia(completada, '100.05', movimiento)), clone(completada));
+assert.throws(() => cash.completarPropinaDelDia(caja, '75.03', movimiento), /menor/);
+for (const monto of ['', '-1', '0.001', 'NaN']) assert.throws(() => cash.completarPropinaDelDia(caja, monto, movimiento));
+assert.equal(cash.completarPropinaDelDia(nuevaCaja(), '0', movimiento).propinas.length, 0);
+assert.throws(() => cash.completarPropinaDelDia(cash.cajaVacia(), '0', movimiento), /Abre/);
+assert.equal(cash.cerrarCaja(completada, cierre, [cobrado.pedido]).corte.totalPropinasCentavos, 10005);
+
 // Las propinas en tarjeta no pueden financiar un retiro de efectivo.
 let sinFondo = cash.abrirCaja(cash.cajaVacia(), '0', apertura);
 sinFondo = cash.registrarPropina(sinFondo, '30', 'tarjeta', movimiento);

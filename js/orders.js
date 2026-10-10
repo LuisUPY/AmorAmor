@@ -19,7 +19,8 @@ globalThis.AmorOrders = (() => {
   }
   function pedidoConEtiqueta(pedidos, etiqueta, ignorarId = null) {
     const clave = claveEtiqueta(etiqueta);
-    return clave ? pedidos.find(pedido => pedido.id !== ignorarId && estaAbierto(pedido) && claveEtiqueta(pedido.etiqueta) === clave) || null : null;
+    return clave ? pedidos.find(pedido => pedido.id !== ignorarId &&
+      (clave.startsWith('mesa:') ? cuentaPendiente(pedido) : estaAbierto(pedido)) && claveEtiqueta(pedido.etiqueta) === clave) || null : null;
   }
   function siguienteDelivery(pedidos, minimo = 1) {
     if (!Number.isSafeInteger(minimo) || minimo < 1) throw new Error('Numeración de delivery inválida.');
@@ -55,6 +56,7 @@ globalThis.AmorOrders = (() => {
     };
   }
   function estadoPedido(pedido) {
+    if (!pedido.partidas.length) return 'CANCELADO';
     if (pedido.partidas.every(partida => partida.pagado)) return 'PAGADO';
     if (pedido.partidas.every(partida => partida.preparado)) return 'PREPARADO';
     return 'ABIERTO';
@@ -62,12 +64,21 @@ globalThis.AmorOrders = (() => {
   function estaAbierto(pedido) {
     return pedido.partidas.some(partida => !partida.pagado || !partida.preparado);
   }
-  function agregarPartidas(pedido, partidas) {
+  function cuentaPendiente(pedido) {
+    return pedido.partidas.some(partida => !partida.pagado);
+  }
+  function validarMesaDisponible(pedidos, etiqueta, ignorarId = null) {
+    if (!claveEtiqueta(etiqueta).startsWith('mesa:')) return;
+    const ocupado = pedidoConEtiqueta(pedidos, etiqueta, ignorarId);
+    if (ocupado) throw new Error(`${etiqueta} ya tiene una cuenta pendiente (N° ${ocupado.numero}). Añade los productos a esa cuenta.`);
+  }
+  function agregarPartidas(pedido, partidas, pedidos = []) {
     if (!estaAbierto(pedido)) throw new Error('Este pedido ya está cerrado. Crea un pedido nuevo.');
+    validarMesaDisponible(pedidos, pedido.etiqueta, pedido.id);
     if (!partidas.length) throw new Error('Agrega productos al pedido.');
     AmorPOS.totalPedido(partidas);
     const resultado = copia(pedido);
-    const ids = new Set(resultado.partidas.map(partida => partida.id));
+    const ids = new Set([...resultado.partidas, ...(resultado.partidasEliminadas || [])].map(partida => partida.id));
     let numeroPartida = resultado.partidas.length + 1;
     for (const partida of copia(partidas)) {
       let id;
@@ -76,6 +87,20 @@ globalThis.AmorOrders = (() => {
       // Cada adición mantiene su propio estado, aunque repita un producto ya pagado.
       resultado.partidas.push({ ...partida, id, preparado: false, pagado: false, preparadoEn: null, pagadoEn: null });
     }
+    resultado.totalCentavos = AmorPOS.totalPedido(resultado.partidas);
+    resultado.estado = estadoPedido(resultado);
+    return resultado;
+  }
+  function eliminarPartida(pedido, partidaId, fecha = new Date().toISOString()) {
+    const partida = pedido.partidas.find(item => item.id === partidaId);
+    if (!partida) throw new Error('Este producto ya no está en el pedido.');
+    if (partida.pagado) throw new Error('No se pueden eliminar productos ya cobrados.');
+    if (!estaAbierto(pedido)) throw new Error('Este pedido ya está cerrado.');
+    if (typeof fecha !== 'string' || !Number.isFinite(Date.parse(fecha)) || Date.parse(fecha) < Date.parse(pedido.creadoEn) ||
+      (partida.preparado && Date.parse(fecha) < Date.parse(partida.preparadoEn))) throw new Error('La fecha de eliminación no es válida.');
+    const resultado = copia(pedido);
+    resultado.partidas = resultado.partidas.filter(item => item.id !== partidaId);
+    resultado.partidasEliminadas = [...(resultado.partidasEliminadas || []), { ...copia(partida), eliminadoEn: fecha }];
     resultado.totalCentavos = AmorPOS.totalPedido(resultado.partidas);
     resultado.estado = estadoPedido(resultado);
     return resultado;
@@ -95,6 +120,6 @@ globalThis.AmorOrders = (() => {
     resultado.estado = estadoPedido(resultado);
     return resultado;
   }
-  return Object.freeze({ nuevoPedido, estadoPedido, estaAbierto, marcarPartida, agregarPartidas,
-    claveEtiqueta, pedidoConEtiqueta, numeroDelivery, siguienteDelivery, resolverEtiqueta });
+  return Object.freeze({ nuevoPedido, estadoPedido, estaAbierto, marcarPartida, agregarPartidas, eliminarPartida,
+    cuentaPendiente, validarMesaDisponible, claveEtiqueta, pedidoConEtiqueta, numeroDelivery, siguienteDelivery, resolverEtiqueta });
 })();
